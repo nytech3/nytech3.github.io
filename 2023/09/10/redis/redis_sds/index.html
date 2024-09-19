@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="Structs of SdsThere are five struct that sds has. They are sdshdr5,sdshdr8,sdshdr16,sdshdr32,sdshdr64, you can find the structs in sds.h.">
+<meta property="og:type" content="article">
+<meta property="og:title" content="源码阅读(一)-Redis中的SDS数据结构">
+<meta property="og:url" content="https://nytech3.github.io/2023/09/10/redis/redis_sds/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="Structs of SdsThere are five struct that sds has. They are sdshdr5,sdshdr8,sdshdr16,sdshdr32,sdshdr64, you can find the structs in sds.h.">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-09-10T10:00:00.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:57.000Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="c">
+<meta property="article:tag" content="redis">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/2023/09/10/redis/redis_sds/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>源码阅读(一)-Redis中的SDS数据结构 | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2023/09/10/redis/redis_sds/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          源码阅读(一)-Redis中的SDS数据结构
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-09-10 18:00:00" itemprop="dateCreated datePublished" datetime="2023-09-10T18:00:00+08:00">2023-09-10</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/technology/" itemprop="url" rel="index"><span itemprop="name">technology</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2023/09/10/redis/redis_sds/" class="post-meta-item leancloud_visitors" data-flag-title="源码阅读(一)-Redis中的SDS数据结构" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<h1 id="Structs-of-Sds"><a href="#Structs-of-Sds" class="headerlink" title="Structs of Sds"></a>Structs of Sds</h1><p>There are five struct that sds has. They are <code>sdshdr5</code>,<code>sdshdr8</code>,<code>sdshdr16</code>,<code>sdshdr32</code>,<code>sdshdr64</code>, you can find the structs in <code>sds.h</code>.</p>
+<span id="more"></span>
+<h1 id="DEBUG问题"><a href="#DEBUG问题" class="headerlink" title="DEBUG问题"></a>DEBUG问题</h1><p>开始之前写一下自己用mac的CLION DEBUG Redis 源码时遇到的问题，主要是因为自己对于编译C语言不是很了解，所以浪费了一些时间。<br>想要进行debug，需要禁止下编译优化，即将 <code>src -&gt; Makefile</code>中的<code>OPTIMIZATION?=-O3</code> 改成 <code>OPTIMIZATION?=-O0</code>， 再将<code>REDIS_LD=$(QUIET_LINK)$(CC) $(FINAL_LDFLAGS)</code><br>改成<code>REDIS_LD=$(QUIET_LINK)$(CC) $(FINAL_LDFLAGS) $(OPTIMIZATION)</code></p>
+<h1 id="SDSHDR"><a href="#SDSHDR" class="headerlink" title="SDSHDR"></a>SDSHDR</h1><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> __<span class="title">attribute__</span> ((__<span class="title">packed__</span>)) <span class="title">sdshdr5</span> &#123;</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> flags; <span class="comment">/* 3 lsb（Least Significant Bits，LSB of type, and 5 msb（Most Significant Bits，MSB） of string length */</span></span><br><span class="line">    <span class="keyword">char</span> buf[];</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+<p>As you can see, the type of flags is char. It presents sds type by 3 lsb, and presents sds len by 5 msb that it is the biggest different with other 4 types.<br>i.e: 01000000 means that len is 01000(2^4=16), and type is 000(SDS_TYPE_5 is defined 0 in redis) </p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="class"><span class="keyword">struct</span> __<span class="title">attribute__</span> ((__<span class="title">packed__</span>)) <span class="title">sdshdr8</span> &#123;</span></span><br><span class="line">    <span class="keyword">uint8_t</span> len; <span class="comment">/* used */</span></span><br><span class="line">    <span class="keyword">uint8_t</span> alloc; <span class="comment">/* excluding the header and null terminator */</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> flags; <span class="comment">/* 3 lsb of type, 5 unused bits */</span></span><br><span class="line">    <span class="keyword">char</span> buf[];</span><br><span class="line">&#125;;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> __<span class="title">attribute__</span> ((__<span class="title">packed__</span>)) <span class="title">sdshdr16</span> &#123;</span></span><br><span class="line">    <span class="comment">/* the length of the string currently stored in sds*/</span></span><br><span class="line">    <span class="keyword">uint16_t</span> len; <span class="comment">/* used */</span></span><br><span class="line">    <span class="comment">/* the total allocated memory for the string, excluding the header and null terminator (usable = usable-hdrlen-1)*/</span></span><br><span class="line">    <span class="keyword">uint16_t</span> alloc; <span class="comment">/* excluding the header and null terminator */</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> flags; <span class="comment">/* 3 lsb of type, 5 unused bits */</span></span><br><span class="line">    <span class="comment">/* the flexible array member that represents the actual string that the sds is storing, It is a null-terminated string */</span></span><br><span class="line">    <span class="keyword">char</span> buf[];</span><br><span class="line">&#125;;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> __<span class="title">attribute__</span> ((__<span class="title">packed__</span>)) <span class="title">sdshdr32</span> &#123;</span></span><br><span class="line">    <span class="keyword">uint32_t</span> len; <span class="comment">/* used */</span></span><br><span class="line">    <span class="keyword">uint32_t</span> alloc; <span class="comment">/* excluding the header and null terminator */</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> flags; <span class="comment">/* 3 lsb of type, 5 unused bits */</span></span><br><span class="line">    <span class="keyword">char</span> buf[];</span><br><span class="line">&#125;;</span><br><span class="line"><span class="class"><span class="keyword">struct</span> __<span class="title">attribute__</span> ((__<span class="title">packed__</span>)) <span class="title">sdshdr64</span> &#123;</span></span><br><span class="line">    <span class="keyword">uint64_t</span> len; <span class="comment">/* used */</span></span><br><span class="line">    <span class="keyword">uint64_t</span> alloc; <span class="comment">/* excluding the header and null terminator */</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> flags; <span class="comment">/* 3 lsb of type, 5 unused bits */</span></span><br><span class="line">    <span class="keyword">char</span> buf[];</span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure>
+
+<h1 id="新建SDS对象"><a href="#新建SDS对象" class="headerlink" title="新建SDS对象"></a>新建SDS对象</h1><p>方法: <code>sds _sdsnewlen(const void *init, size_t initlen, int trymalloc)</code></p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Create a new sds string with the content specified by the &#x27;init&#x27; pointer</span></span><br><span class="line"><span class="comment"> * and &#x27;initlen&#x27;.</span></span><br><span class="line"><span class="comment"> * If NULL is used for &#x27;init&#x27; the string is initialized with zero bytes.</span></span><br><span class="line"><span class="comment"> * If SDS_NOINIT is used, the buffer is left uninitialized;</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * The string is always null-terminated (all the sds strings are, always) so</span></span><br><span class="line"><span class="comment"> * even if you create an sds string with:</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * mystring = sdsnewlen(&quot;abc&quot;,3);</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * You can print the string with printf() as there is an implicit \0 at the</span></span><br><span class="line"><span class="comment"> * end of the string. However the string is binary safe and can contain</span></span><br><span class="line"><span class="comment"> * \0 characters in the middle, as the length is stored in the sds header. </span></span><br><span class="line"><span class="comment"> * sds因为在其header中包含了sds的长度，所以在字符串中间遇到了字符串终止符也不会终束。</span></span><br><span class="line"><span class="comment"> * */</span></span><br><span class="line">sds _sdsnewlen(<span class="keyword">const</span> <span class="keyword">void</span> *init, <span class="keyword">size_t</span> initlen, <span class="keyword">int</span> trymalloc) &#123;</span><br><span class="line">    <span class="keyword">void</span> *sh;</span><br><span class="line">    <span class="comment">/* typedef char *sds; s为指向buf的指针 */</span></span><br><span class="line">    sds s;</span><br><span class="line">    <span class="comment">/* 根据initlen的长度获取sds的类型 类型: SDS_TYPE_5/SDS_TYPE_8/SDS_TYPE_16/SDS_TYPE_32/SDS_TYPE_64 */</span></span><br><span class="line">    <span class="keyword">char</span> type = sdsReqType(initlen);</span><br><span class="line">    <span class="comment">/* Empty strings are usually created in order to append. Use type 8</span></span><br><span class="line"><span class="comment">     * since type 5 is not good at this. */</span></span><br><span class="line">    <span class="comment">/* 由于空字符串的创建往往会为追加字符串，所以直接使用SDS_TYPE_5并不是一个好的选择，所以默认选择了SDS_TYPE_8 */</span></span><br><span class="line">    <span class="keyword">if</span> (type == SDS_TYPE_5 &amp;&amp; initlen == <span class="number">0</span>) type = SDS_TYPE_8;</span><br><span class="line">    <span class="comment">/* 根据sds的类型，获取header的长度*/</span></span><br><span class="line">    <span class="keyword">int</span> hdrlen = sdsHdrSize(type);</span><br><span class="line">    <span class="comment">/* 声明flags pointer的指针 */</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> *fp; <span class="comment">/* flags pointer. */</span></span><br><span class="line">    <span class="comment">/* 分配内存块的大小 */</span></span><br><span class="line">    <span class="keyword">size_t</span> usable;</span><br><span class="line">    <span class="comment">/* 在这个特定的情况下，assert(initlen + hdrlen + 1 &gt; initlen);</span></span><br><span class="line"><span class="comment">     * 这行代码是用来检查 initlen + hdrlen + 1 这个结果是否大于 initlen。</span></span><br><span class="line"><span class="comment">     * 这个断言实际上在检查是否发生了unsigned integer溢出。</span></span><br><span class="line"><span class="comment">     * 在C语言中，当一个无符号整型的值超过其最大可能的值时，它会回绕到零（这称为溢出）。</span></span><br><span class="line"><span class="comment">     * 例如，如果你有一个无符号8位整型（其最大值是255），并尝试将其值增加到256，结果将会是0。</span></span><br><span class="line"><span class="comment">     * 这是因为256超出了8位无符号整型的范围，所以它回绕到了0。</span></span><br><span class="line"><span class="comment">     * 所以，如果 initlen + hdrlen + 1 的结果不大于 initlen，那么就意味着发生了溢出。</span></span><br><span class="line"><span class="comment">     * 由于溢出通常会导致各种问题（包括可能的安全问题），所以这个断言用来确保这种情况不会发生。</span></span><br><span class="line"><span class="comment">     * 如果发生了溢出，那么这个断言就会失败，程序将终止并打印错误消息。*/</span></span><br><span class="line">    assert(initlen + hdrlen + <span class="number">1</span> &gt; initlen); <span class="comment">/* Catch size_t overflow */</span></span><br><span class="line">    <span class="comment">/* 使用两个不同的内存分配函数（s_trymalloc_usable和s_malloc_usable）中的一个来分配内存。</span></span><br><span class="line"><span class="comment">     * 选择哪一个函数取决于trymalloc变量的值。</span></span><br><span class="line"><span class="comment">     * 如果trymalloc为1，则使用s_trymalloc_usable函数。否则，使用s_malloc_usable函数。</span></span><br><span class="line"><span class="comment">     * “try”版本的内存分配函数在无法分配所需的内存时返回NULL，而不是使程序崩溃或抛出异常。这是为了让程序能够更优雅地处理内存不足的情况。</span></span><br><span class="line"><span class="comment">     * 这段代码的结果（即分配的内存）被赋值给sh变量。如果内存分配成功，sh将是一个指向新分配的内存的指针。</span></span><br><span class="line"><span class="comment">     * 如果内存分配失败，sh为NULL。</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    sh = trymalloc ?</span><br><span class="line">         s_trymalloc_usable(hdrlen + initlen + <span class="number">1</span>, &amp;usable) :</span><br><span class="line">         s_malloc_usable(hdrlen + initlen + <span class="number">1</span>, &amp;usable);</span><br><span class="line">    <span class="keyword">if</span> (sh == <span class="literal">NULL</span>) <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">     * 如果init等于SDS_NOINIT，则将init设置为NULL。这通常意味着不需要对新分配的内存进行初始化。</span></span><br><span class="line"><span class="comment">     * 否则，如果init为假（在C中，0值被视为假），那么就执行memset(sh, 0, hdrlen+initlen+1);</span></span><br><span class="line"><span class="comment">     * 这句代码，它的作用是将sh指向的内存块的前hdrlen+initlen+1个字节设置为0，也就是清零这部分内存。</span></span><br><span class="line"><span class="comment">     * 这两个条件分支可能涵盖了所有的init值。如果init既不等于SDS_NOINIT，也不为假，那么这段代码不会执行任何操作。</span></span><br><span class="line"><span class="comment">     * 这可能意味着在其他地方已经对内存进行了初始化，或者这段内存不需要被初始化。</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">if</span> (init == SDS_NOINIT)</span><br><span class="line">        init = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="keyword">else</span> <span class="keyword">if</span> (!init)</span><br><span class="line">        <span class="built_in">memset</span>(sh, <span class="number">0</span>, hdrlen + initlen + <span class="number">1</span>);</span><br><span class="line">    <span class="comment">/* 将s指向sds中的buf的地址上*/</span></span><br><span class="line">    s = (<span class="keyword">char</span> *) sh + hdrlen;</span><br><span class="line">    <span class="comment">/* 获取flag地址*/</span></span><br><span class="line">    fp = ((<span class="keyword">unsigned</span> <span class="keyword">char</span> *) s) - <span class="number">1</span>;</span><br><span class="line">    <span class="comment">/* 计算出buf可存储数据的大小 */</span></span><br><span class="line">    usable = usable - hdrlen - <span class="number">1</span>;</span><br><span class="line">    <span class="comment">/* 如果可用地址&gt;sds类型的长度限制则将usable置为sds类型的长度限制 */</span></span><br><span class="line">    <span class="comment">/* the `s_malloc_usable` function call initializes `usable`</span></span><br><span class="line"><span class="comment">     * with a specific size, which should be within the proper limits.</span></span><br><span class="line"><span class="comment">     * However, the check</span></span><br><span class="line"><span class="comment">     *    ```</span></span><br><span class="line"><span class="comment">     *      if (usable &gt; sdsTypeMaxSize(type))</span></span><br><span class="line"><span class="comment">     *          usable = sdsTypeMaxSize(type);</span></span><br><span class="line"><span class="comment">     *    ```</span></span><br><span class="line"><span class="comment">     * is still a crucial safety measure.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * This is because the function `s_malloc_usable` might allocate more than</span></span><br><span class="line"><span class="comment">     * requested. This is due to the way memory allocators work: they often provide</span></span><br><span class="line"><span class="comment">     * memory chunks in predefined size(like powers of 2). So if you ask for a</span></span><br><span class="line"><span class="comment">     * specific amount of memory, the allocator might give you a slightly larger</span></span><br><span class="line"><span class="comment">     * block because that&#x27;s the closest predefined size it has available.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * This means that `usable` might end up being larger than what you originally</span></span><br><span class="line"><span class="comment">     * asked for. The check ensures that even if this happens , `usable` doesn&#x27;t</span></span><br><span class="line"><span class="comment">     * exceed `sdsTypeMaxSize(type)`,thus still preventing any potential overflow</span></span><br><span class="line"><span class="comment">     * or memory issues.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * Moreover, even if the current implementation of the memory allocation function</span></span><br><span class="line"><span class="comment">     * ensures that `usable` won&#x27;t exceed the limit, it&#x27;s still good practice to include</span></span><br><span class="line"><span class="comment">     * such checks. it makes the code more than robust to future changes and guards</span></span><br><span class="line"><span class="comment">     * against potential bugs or oversights.</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     **/</span></span><br><span class="line">    <span class="keyword">if</span> (usable &gt; sdsTypeMaxSize(type))</span><br><span class="line">        usable = sdsTypeMaxSize(type);</span><br><span class="line">    <span class="keyword">switch</span> (type) &#123;</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_5: &#123;</span><br><span class="line">            <span class="comment">/* 低的3位（Least Significant Bits，LSB）用于表示类型，而最高的5位（Most Significant Bits，MSB）用于表示字符串长度。 */</span></span><br><span class="line">            *fp = type | (initlen &lt;&lt; SDS_TYPE_BITS);</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_8: &#123;</span><br><span class="line">            <span class="comment">/* #define SDS_HDR_VAR(T,s) struct sdshdr##T *sh = (void*)((s)-(sizeof(struct sdshdr##T))); */</span></span><br><span class="line">            SDS_HDR_VAR(<span class="number">8</span>, s);</span><br><span class="line">            sh-&gt;len = initlen;</span><br><span class="line">            sh-&gt;alloc = usable;</span><br><span class="line">            *fp = type;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_16: &#123;</span><br><span class="line">            SDS_HDR_VAR(<span class="number">16</span>, s);</span><br><span class="line">            sh-&gt;len = initlen;</span><br><span class="line">            sh-&gt;alloc = usable;</span><br><span class="line">            *fp = type;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_32: &#123;</span><br><span class="line">            SDS_HDR_VAR(<span class="number">32</span>, s);</span><br><span class="line">            sh-&gt;len = initlen;</span><br><span class="line">            sh-&gt;alloc = usable;</span><br><span class="line">            *fp = type;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_64: &#123;</span><br><span class="line">            SDS_HDR_VAR(<span class="number">64</span>, s);</span><br><span class="line">            sh-&gt;len = initlen;</span><br><span class="line">            sh-&gt;alloc = usable;</span><br><span class="line">            *fp = type;</span><br><span class="line">            <span class="keyword">break</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (initlen &amp;&amp; init)</span><br><span class="line">        <span class="built_in">memcpy</span>(s, init, initlen);</span><br><span class="line">    s[initlen] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">    <span class="keyword">return</span> s;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="根据字符串长度获取sds类型"><a href="#根据字符串长度获取sds类型" class="headerlink" title="根据字符串长度获取sds类型"></a>根据字符串长度获取sds类型</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">inline</span> <span class="keyword">char</span> <span class="title">sdsReqType</span><span class="params">(<span class="keyword">size_t</span> string_size)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (string_size &lt; <span class="number">1</span> &lt;&lt; <span class="number">5</span>)</span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         * 字符长度小于5bit时会返回SDS_TYPE_5，buf会与flag共享一个byte，</span></span><br><span class="line"><span class="comment">         * 当字符串长度大于5bit时，flag还是只会使用3bit，字节内剩下的5bit直接不使用</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="keyword">return</span> SDS_TYPE_5;</span><br><span class="line">    <span class="keyword">if</span> (string_size &lt; <span class="number">1</span> &lt;&lt; <span class="number">8</span>)</span><br><span class="line">        <span class="keyword">return</span> SDS_TYPE_8;</span><br><span class="line">    <span class="keyword">if</span> (string_size &lt; <span class="number">1</span> &lt;&lt; <span class="number">16</span>)</span><br><span class="line">        <span class="keyword">return</span> SDS_TYPE_16;</span><br><span class="line"><span class="meta">#<span class="meta-keyword">if</span> (LONG_MAX == LLONG_MAX)</span></span><br><span class="line">    <span class="comment">/*</span></span><br><span class="line"><span class="comment">     * 这段代码是在Redis中选择合适的字符串存储类型的代码片段。</span></span><br><span class="line"><span class="comment">     * Redis的字符串存储类型（SDS，Simple Dynamic String）有不同的版本，</span></span><br><span class="line"><span class="comment">     * 例如SDS_TYPE_32和SDS_TYPE_64，分别代表32位和64位的字符串类型。</span></span><br><span class="line"><span class="comment">     * 这段代码的意思是，如果当前系统的最大长整型（LONG_MAX）等于长长整型（LLONG_MAX），</span></span><br><span class="line"><span class="comment">     * 那么就根据字符串的大小来决定使用32位还是64位的字符串类型。</span></span><br><span class="line"><span class="comment">     * 如果字符串的大小小于2的32次方，就使用32位的类型，否则使用64位的类型。</span></span><br><span class="line"><span class="comment">     * 如果当前系统的最大长整型不等于长长整型，那么直接使用32位的字符串类型。</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * C语言中，最长长整型（long long int，通常被称为LLONG）的长度是由系统定义的。</span></span><br><span class="line"><span class="comment">     * 在大多数情况下，它在32位系统中是64位（8字节），在64位系统中也是64位（8字节）。</span></span><br><span class="line"><span class="comment">     * 然而，&quot;long int&quot;（通常被称为LONG）的长度取决于系统和编译器。</span></span><br><span class="line"><span class="comment">     * !! 在32位系统中，它通常是32位（4字节）；在64位系统中，它可能是64位（8字节），也可能仍然是32位（4字节）。!!</span></span><br><span class="line"><span class="comment">     * 这就是为什么在处理整型的时候，我们需要考虑系统的兼容性问题。</span></span><br><span class="line"><span class="comment">     * 另外，Java的整型长度不取决于系统，而是在Java语言规范中明确定义的。</span></span><br><span class="line"><span class="comment">     * Java的长整型（long）无论在32位系统还是64位系统中，都是64位（8字节）。</span></span><br><span class="line"><span class="comment">     * 这使得Java程序在不同的系统平台上具有更好的可移植性。</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * SDS_TYPE_32: typedef unsigned int uint32_t;</span></span><br><span class="line"><span class="comment">     * SDS_TYPE_64: typedef unsigned long long uint64_t;</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     * 在32位系统中，指针的大小是32位（4字节），因此理论上最大可以寻址的内存空间是4GB（2^32字节）。</span></span><br><span class="line"><span class="comment">     * 但是，实际上可能无法使用全部的4GB内存来存储字符串。因为操作系统需要一部分内存来存储其他数据和代码，</span></span><br><span class="line"><span class="comment">     * 而且还需要为堆栈、内核等预留空间。所以，实际可用于存储字符串的内存可能远小于4GB。</span></span><br><span class="line"><span class="comment">     * 对于Redis的SDS（Simple Dynamic String），它的长度由一个整数来表示。</span></span><br><span class="line"><span class="comment">     * 如果这个整数是32位的，那么最大的字符串长度就是2^32-1，这是因为我们需要一个字节来存储空字符&#x27;\0&#x27;。</span></span><br><span class="line"><span class="comment">     * 总的来说，32位系统中字符串的最大长度取决于多种因素，包括可用内存、地址空间的大小，以及用于表示字符串长度的整数的大小。</span></span><br><span class="line"><span class="comment">     *</span></span><br><span class="line"><span class="comment">     */</span></span><br><span class="line">    <span class="keyword">if</span> (string_size &lt; <span class="number">1ll</span> &lt;&lt; <span class="number">32</span>)</span><br><span class="line">        <span class="keyword">return</span> SDS_TYPE_32;</span><br><span class="line">    <span class="keyword">return</span> SDS_TYPE_64;</span><br><span class="line"><span class="meta">#<span class="meta-keyword">else</span></span></span><br><span class="line">    <span class="keyword">return</span> SDS_TYPE_32;</span><br><span class="line"><span class="meta">#<span class="meta-keyword">endif</span></span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<h2 id="获取sds的大小"><a href="#获取sds的大小" class="headerlink" title="获取sds的大小"></a>获取sds的大小</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * #define SDS_TYPE_MASK 7</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">inline</span> <span class="keyword">int</span> <span class="title">sdsHdrSize</span><span class="params">(<span class="keyword">char</span> type)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">switch</span> (type &amp; SDS_TYPE_MASK) &#123;</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_5:</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">sizeof</span>(struct sdshdr5);</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_8:</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">sizeof</span>(struct sdshdr8);</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_16:</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">sizeof</span>(struct sdshdr16);</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_32:</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">sizeof</span>(struct sdshdr32);</span><br><span class="line">        <span class="keyword">case</span> SDS_TYPE_64:</span><br><span class="line">            <span class="keyword">return</span> <span class="keyword">sizeof</span>(struct sdshdr64);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2023/09/10/redis/redis_sds/" title="源码阅读(一)-Redis中的SDS数据结构">https://nytech3.github.io/2023/09/10/redis/redis_sds/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/c/" rel="tag"># c</a>
+              <a href="/tags/redis/" rel="tag"># redis</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/06/02/algorithm/2535_%E6%95%B0%E7%BB%84%E5%85%83%E7%B4%A0%E5%92%8C%E4%B8%8E%E6%95%B0%E5%AD%97%E5%92%8C%E7%9A%84%E7%BB%9D%E5%AF%B9%E5%B7%AE/2535_%E6%95%B0%E7%BB%84%E5%85%83%E7%B4%A0%E5%92%8C%E4%B8%8E%E6%95%B0%E5%AD%97%E5%92%8C%E7%9A%84%E7%BB%9D%E5%AF%B9%E5%B7%AE/" rel="prev" title="2535. 数组元素和与数字和的绝对差">
+      <i class="fa fa-chevron-left"></i> 2535. 数组元素和与数字和的绝对差
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2023/09/11/redis/redis_set/" rel="next" title="源码阅读(二)-Redis中的SET命令">
+      源码阅读(二)-Redis中的SET命令 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#Structs-of-Sds"><span class="nav-number">1.</span> <span class="nav-text">Structs of Sds</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#DEBUG%E9%97%AE%E9%A2%98"><span class="nav-number">2.</span> <span class="nav-text">DEBUG问题</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#SDSHDR"><span class="nav-number">3.</span> <span class="nav-text">SDSHDR</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%96%B0%E5%BB%BASDS%E5%AF%B9%E8%B1%A1"><span class="nav-number">4.</span> <span class="nav-text">新建SDS对象</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%A0%B9%E6%8D%AE%E5%AD%97%E7%AC%A6%E4%B8%B2%E9%95%BF%E5%BA%A6%E8%8E%B7%E5%8F%96sds%E7%B1%BB%E5%9E%8B"><span class="nav-number">4.1.</span> <span class="nav-text">根据字符串长度获取sds类型</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%8E%B7%E5%8F%96sds%E7%9A%84%E5%A4%A7%E5%B0%8F"><span class="nav-number">4.2.</span> <span class="nav-text">获取sds的大小</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="简介Redis提供两种持久化方法：RDB (Redis DataBase) 和 AOF (Append Only File)。 RDBRDB：RDB 持久化方式是通过创建数据库的快照来实现的。RDB 在指定的时间间隔内，将内存中的数据集快照写入磁盘，实际操作就是执行 SAVE 或 BGSAVE 命令。SAVE 命令会直接阻塞数据库的所有操作，直到快照创建完毕，因此在生产环境中基本不用；BGSA">
+<meta property="og:type" content="article">
+<meta property="og:title" content="源码阅读(九)-Redis中的AOF与RDB">
+<meta property="og:url" content="https://nytech3.github.io/2023/09/27/redis/redis_aof_and_rdb/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="简介Redis提供两种持久化方法：RDB (Redis DataBase) 和 AOF (Append Only File)。 RDBRDB：RDB 持久化方式是通过创建数据库的快照来实现的。RDB 在指定的时间间隔内，将内存中的数据集快照写入磁盘，实际操作就是执行 SAVE 或 BGSAVE 命令。SAVE 命令会直接阻塞数据库的所有操作，直到快照创建完毕，因此在生产环境中基本不用；BGSA">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-09-27T10:00:00.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:56.999Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="c">
+<meta property="article:tag" content="redis">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/2023/09/27/redis/redis_aof_and_rdb/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>源码阅读(九)-Redis中的AOF与RDB | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2023/09/27/redis/redis_aof_and_rdb/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          源码阅读(九)-Redis中的AOF与RDB
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-09-27 18:00:00" itemprop="dateCreated datePublished" datetime="2023-09-27T18:00:00+08:00">2023-09-27</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/technology/" itemprop="url" rel="index"><span itemprop="name">technology</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2023/09/27/redis/redis_aof_and_rdb/" class="post-meta-item leancloud_visitors" data-flag-title="源码阅读(九)-Redis中的AOF与RDB" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+
+<h1 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h1><p>Redis提供两种持久化方法：RDB (Redis DataBase) 和 AOF (Append Only File)。</p>
+<h2 id="RDB"><a href="#RDB" class="headerlink" title="RDB"></a>RDB</h2><p>RDB：RDB 持久化方式是通过创建数据库的快照来实现的。RDB 在指定的时间间隔内，将内存中的数据集快照写入磁盘，<br>实际操作就是执行 SAVE 或 BGSAVE 命令。SAVE 命令会直接阻塞数据库的所有操作，直到快照创建完毕，<br>因此在生产环境中基本不用；BGSAVE 命令会创建一个子进程来创建快照，主进程则继续处理客户端请求。<br>RDB 适合大规模数据恢复，且对数据完整性要求不是非常高的场景。</p>
+<blockquote>
+<p>RDB的数据完整性问题主要来源于它的工作方式。RDB通过定期进行快照来将内存中的数据写入磁盘，而不是实时或准实时地持久化数据。 这意味着，如果在两次快照之间，Redis发生了故障（比如进程崩溃或者是服务器断电等），那么最后一次快照以后更改的所有数据都将丢失。 具体丢失多少数据，取决于设置的快照频率。例如，如果你设置的是每10分钟保存一次快照，那么最坏的情况就是会丢失10分钟的数据。 相比之下，AOF持久化方式记录了所有修改数据的命令。只要这些命令被成功写入并同步到磁盘，数据就能被恢复，因此AOF的数据完整性要好于RDB。 但是，RDB也有它的优点。比如，RDB文件通常比AOF文件小，且恢复速度更快。因此，选择哪种持久化方式，需要根据具体的应用场景和需求来决定。</p>
+</blockquote>
+<h3 id="RDB工作流程"><a href="#RDB工作流程" class="headerlink" title="RDB工作流程"></a>RDB工作流程</h3><p>RDB的工作原理是将一定时间内的所有数据变化存储在一个快照中，这个快照是一个包含了所有数据的二进制文件。<br>以下是RDB持久化的详细步骤：</p>
+<ol>
+<li>当满足持久化条件时（例如，根据配置文件的设置，在一定时间内有一定数量的数据修改），Redis会调用fork()创建一个子进程。</li>
+<li>子进程开始运行，它将内存中的数据写入到一个临时的RDB文件中。这个过程中，主进程可以继续处理客户端的请求。</li>
+<li>子进程在生成RDB文件时，会按照特定格式写入数据。首先，写入RDB版本号，然后根据数据类型（如String，List，Set，Sorted Set，Hash等）写入对应的类型标识，然后写入键值对数据。对于复杂数据类型（如List，Set，Sorted Set，Hash等），还会写入长度信息。对于过期键，会在键值对之前写入过期时间。</li>
+<li>当子进程把所有数据写入临时RDB文件后，会对文件进行校验，并在文件尾部写入CRC64校验和。</li>
+<li>子进程会发送一个信号给主进程，通知主进程数据已经写入完成。</li>
+<li>主进程在接收到子进程的信号后，会用新的RDB文件替换旧的RDB文件。<br>最后，主进程会清理子进程并记录一条日志，表示RDB文件保存成功。</li>
+</ol>
+<p>这种方式的优点是生成的RDB文件非常紧凑，适合备份，且恢复速度非常快。但是，因为RDB是定时生成的，所以如果在两次RDB文件生成之间Redis出现故障，那么这段时间的数据将无法恢复。</p>
+<p>要启用RDB，你可以在Redis的配置文件（通常是redis.conf）中添加或者修改如下配置：<br>(!!! 这是一个配置选项，不是命令)</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">save <span class="number">900</span> <span class="number">1</span></span><br><span class="line">save <span class="number">300</span> <span class="number">10</span></span><br><span class="line">save <span class="number">60</span> <span class="number">10000</span></span><br></pre></td></tr></table></figure>
+<p>上面的配置表示：在900秒（15分钟）如果至少有1个key发生变化，或者在300秒（5分钟）如果至少有10个key发生变化，或者在60秒内如果至少有10000个key发生变化，就创建RDB快照。</p>
+<h2 id="AOF"><a href="#AOF" class="headerlink" title="AOF"></a>AOF</h2><p>AOF：AOF 持久化方式记录服务器接收到的每一条写命令。服务器在接收到写命令后，将命令追加到 AOF 文件的末尾。<br>当Redis重启时，会通过回放 AOF 文件中的命令来恢复原始的数据。<br>AOF 文件有三种同步方式，分别是：每秒同步、每修改同步、不同步。<br>AOF 的主要优点是数据完整性更好，可以保证至少不会丢失一秒钟的数据。</p>
+<h3 id="AOF工作流程"><a href="#AOF工作流程" class="headerlink" title="AOF工作流程"></a>AOF工作流程</h3><p>AOF（Append Only File）是Redis的一种持久化方式，它通过记录所有修改数据的命令来实现持久化。以下是AOF持久化的详细步骤：</p>
+<ol>
+<li>当Redis执行完一个写命令（例如SET，LPUSH等）后，它会将该命令追加到AOF缓冲区的末尾。</li>
+<li>根据Redis的配置，AOF缓冲区的内容会在一定的时间内同步到磁盘。同步的策略可以有以下三种：<ul>
+<li>always：每次有数据修改发生时都会立即写入磁盘。这种方式最安全，但效率最低。</li>
+<li>everysec：每秒钟同步一次。这是默认的策略，是折中的方案。</li>
+<li>no：让操作系统决定何时进行同步。</li>
+</ul>
+</li>
+<li>当Redis重启时，它会读取AOF文件，然后通过回放里面的命令来恢复数据。</li>
+<li>为了防止AOF文件无限增长，Redis会定期对AOF文件进行重写。重写的过程是这样的：<br>a. Redis会创建一个子进程，然后在子进程中通过遍历整个数据库，用最小的命令序列来生成一个新的AOF文件。这个新的AOF文件和旧的AOF文件所代表的数据库状态是一样的，但新的AOF文件通常会比旧的小很多。<br>b. 当AOF重写的子进程完成新AOF文件的生成后，它会用新的AOF文件替换旧的AOF文件。在这个过程中，为了防止在子进程生成新AOF文件的同时，主进程还在处理写命令，Redis引入了AOF重写缓冲区。主进程在处理写命令时，不仅会把命令追加到AOF缓冲区，还会追加到AOF重写缓冲区。当子进程完成新AOF文件的生成后，再把AOF重写缓冲区的内容追加到新AOF文件，这样就保证了数据的完整性。</li>
+<li>此外，为了保证数据的安全性，Redis还提供了AOF文件的校验功能。用户可以通过配置开启这个功能，当Redis启动时，它会对AOF文件进行校验，如果发现AOF文件有错误，Redis会拒绝启动。</li>
+</ol>
+<blockquote>
+<p>在Redis中，AOF（Append Only File）文件的重写（rewrite）主要是为了减小AOF文件的大小。这主要是通过折叠冗余的命令来实现的。 在Redis运行过程中，所有修改数据的命令都会被追加到AOF文件中，这就可能导致同一个键被多次修改，而这些修改操作都被记录了下来。例如，如果一个键被连续SET了100次，那么在AOF文件中，就有100条SET命令。但其实，我们只需要保留最后一条SET命令，就能保证这个键的值是正确的。 因此，在AOF重写过程中，Redis会创建一个子进程，这个子进程会读取当前数据库中的所有数据，然后以最小的命令序列来重新生成一个新的AOF文件。在上面的例子中，新的AOF文件只会包含最后一次的SET命令，之前的99次SET命令都被折叠了。 同时，为了保证在AOF重写过程中，新的写命令能够正确地被记录，Redis还引入了AOF重写缓冲区。在子进程生成新AOF文件的同时，主进程在处理新的写命令时，会同时将命令追加到AOF缓冲区和AOF重写缓冲区。当子进程完成新AOF文件的生成后，再把AOF重写缓冲区的内容追加到新AOF文件，这样就能保证数据的完整性。 通过这种方式，AOF重写可以有效地减小AOF文件的大小，提高Redis的运行效率。</p>
+</blockquote>
+<p>要启用AOF，你可以在Redis的配置文件（通常是redis.conf）中添加或者修改如下配置：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">appendonly yes</span><br></pre></td></tr></table></figure>
+<p>这行配置表示启用AOF持久化。</p>
+<span id="more"></span>
+
+<h1 id="使用场景"><a href="#使用场景" class="headerlink" title="使用场景"></a>使用场景</h1><h2 id="RDB-1"><a href="#RDB-1" class="headerlink" title="RDB"></a>RDB</h2><p>数据备份：RDB生成的是数据的快照，适合做数据库的备份，如每天的0点备份。<br>全量复制：Redis的复制操作需要使用RDB，主节点会将数据以RDB的形式发送给从节点来实现数据的复制。<br>用于灾难恢复：因为RDB是全量数据备份，所以它非常适合用于进行数据的灾难恢复。</p>
+<h3 id="优点"><a href="#优点" class="headerlink" title="优点"></a>优点</h3><p>RDB能够最大程度地提高Redis的性能：父进程在保存RDB文件时唯一需要做的就是fork一个子进程，然后这个子进程就会处理接下来的所有保存工作，父进程无需做任何磁盘 I/O 操作。<br>RDB文件是经过压缩的二进制文件，对于大数据量的数据库来说，备份文件非常小。</p>
+<h3 id="缺点"><a href="#缺点" class="headerlink" title="缺点"></a>缺点</h3><p>RDB在某些情况下可能无法达到预期的数据一致性。因为RDB只是定时做快照，如果Redis意外宕机，那么最后一次快照以后更改的数据将会丢失。</p>
+<h2 id="AOF-1"><a href="#AOF-1" class="headerlink" title="AOF"></a>AOF</h2><p>数据的恢复：AOF记录了所有的写操作命令，所以在数据恢复方面，AOF文件的数据完整性要优于RDB。<br>数据备份：与RDB相比，AOF文件的数据更新更加及时，可以提供更好的持久性保证。</p>
+<h3 id="优点-1"><a href="#优点-1" class="headerlink" title="优点"></a>优点</h3><p>AOF提供了更好的持久性：相比于RDB，AOF在默认配置下可以提供更好的持久性保证。Redis可以配置成每秒同步一次AOF文件，这样Redis最多丢失一秒的数据。</p>
+<h3 id="缺点-1"><a href="#缺点-1" class="headerlink" title="缺点"></a>缺点</h3><p>对于相同的数据集，AOF文件通常比RDB文件大。<br>根据同步频率的不同，AOF在高负载下的性能可能会稍逊于RDB。</p>
+<h1 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h1><h2 id="BGSAVE-json"><a href="#BGSAVE-json" class="headerlink" title="BGSAVE json"></a>BGSAVE json</h2><p>异步保存快照数据到磁盘<br>BGSAVE使用</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">BGSAVE</span><br></pre></td></tr></table></figure>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;BGSAVE&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;summary&quot;</span>: <span class="string">&quot;Asynchronously saves the database(s) to disk.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;complexity&quot;</span>: <span class="string">&quot;O(1)&quot;</span>,</span><br><span class="line">        <span class="string">&quot;group&quot;</span>: <span class="string">&quot;server&quot;</span>,</span><br><span class="line">        <span class="string">&quot;since&quot;</span>: <span class="string">&quot;1.0.0&quot;</span>,</span><br><span class="line">        <span class="string">&quot;arity&quot;</span>: <span class="number">-1</span>,</span><br><span class="line">        <span class="string">&quot;function&quot;</span>: <span class="string">&quot;bgsaveCommand&quot;</span>,</span><br><span class="line">        <span class="string">&quot;history&quot;</span>: [</span><br><span class="line">            [</span><br><span class="line">                <span class="string">&quot;3.2.2&quot;</span>,</span><br><span class="line">                <span class="string">&quot;Added the `SCHEDULE` option.&quot;</span></span><br><span class="line">            ]</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;command_flags&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;NO_ASYNC_LOADING&quot;</span>,</span><br><span class="line">            <span class="string">&quot;ADMIN&quot;</span>,</span><br><span class="line">            <span class="string">&quot;NOSCRIPT&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;arguments&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;schedule&quot;</span>,</span><br><span class="line">                <span class="string">&quot;token&quot;</span>: <span class="string">&quot;SCHEDULE&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;pure-token&quot;</span>,</span><br><span class="line">                <span class="string">&quot;optional&quot;</span>: <span class="literal">true</span>,</span><br><span class="line">                <span class="string">&quot;since&quot;</span>: <span class="string">&quot;3.2.2&quot;</span></span><br><span class="line">            &#125;</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;reply_schema&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;oneOf&quot;</span>: [</span><br><span class="line">                &#123;</span><br><span class="line">                    <span class="string">&quot;const&quot;</span>: <span class="string">&quot;Background saving started&quot;</span></span><br><span class="line">                &#125;,</span><br><span class="line">                &#123;</span><br><span class="line">                    <span class="string">&quot;const&quot;</span>: <span class="string">&quot;Background saving scheduled&quot;</span></span><br><span class="line">                &#125;</span><br><span class="line">            ]</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>SAVE使用方式</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">SAVE</span><br></pre></td></tr></table></figure>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;SAVE&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;summary&quot;</span>: <span class="string">&quot;Synchronously saves the database(s) to disk.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;complexity&quot;</span>: <span class="string">&quot;O(N) where N is the total number of keys in all databases&quot;</span>,</span><br><span class="line">        <span class="string">&quot;group&quot;</span>: <span class="string">&quot;server&quot;</span>,</span><br><span class="line">        <span class="string">&quot;since&quot;</span>: <span class="string">&quot;1.0.0&quot;</span>,</span><br><span class="line">        <span class="string">&quot;arity&quot;</span>: <span class="number">1</span>,</span><br><span class="line">        <span class="string">&quot;function&quot;</span>: <span class="string">&quot;saveCommand&quot;</span>,</span><br><span class="line">        <span class="string">&quot;command_flags&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;NO_ASYNC_LOADING&quot;</span>,</span><br><span class="line">            <span class="string">&quot;ADMIN&quot;</span>,</span><br><span class="line">            <span class="string">&quot;NOSCRIPT&quot;</span>,</span><br><span class="line">            <span class="string">&quot;NO_MULTI&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;reply_schema&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;const&quot;</span>: <span class="string">&quot;OK&quot;</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>SAVE和BGSAVE都是Redis中创建数据快照的命令，但他们的工作方式有所不同。<br>SAVE命令：当执行SAVE命令时，Redis会阻塞所有客户端连接，直到整个数据库被写入磁盘。<br>         这意味着，只有当所有数据都保存到磁盘后，Redis才会开始响应其他命令。在数据量大的情况下，这可能会导致显著的延迟。<br>BGSAVE命令：与SAVE命令不同，BGSAVE命令会在后台创建一个子进程进行数据的保存操作。<br>         这意味着Redis主进程可以继续处理其他客户端的请求，而不会阻塞任何操作。只有在数据量非常大，以至于创建子进程和复制数据需要很长时间的情况下，BGSAVE命令才可能会导致性能问题。<br>总的来说，BGSAVE命令通常是首选的创建快照方法，因为它不会阻塞Redis服务。然而，在某些情况下，例如在系统资源有限或者需要立即创建快照的情况下，SAVE命令可能会更有用。</p>
+</blockquote>
+<h2 id="BGREWRITEAOF-json"><a href="#BGREWRITEAOF-json" class="headerlink" title="BGREWRITEAOF json"></a>BGREWRITEAOF json</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;BGREWRITEAOF&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;summary&quot;</span>: <span class="string">&quot;Asynchronously rewrites the append-only file to disk.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;complexity&quot;</span>: <span class="string">&quot;O(1)&quot;</span>,</span><br><span class="line">        <span class="string">&quot;group&quot;</span>: <span class="string">&quot;server&quot;</span>,</span><br><span class="line">        <span class="string">&quot;since&quot;</span>: <span class="string">&quot;1.0.0&quot;</span>,</span><br><span class="line">        <span class="string">&quot;arity&quot;</span>: <span class="number">1</span>,</span><br><span class="line">        <span class="string">&quot;function&quot;</span>: <span class="string">&quot;bgrewriteaofCommand&quot;</span>,</span><br><span class="line">        <span class="string">&quot;command_flags&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;NO_ASYNC_LOADING&quot;</span>,</span><br><span class="line">            <span class="string">&quot;ADMIN&quot;</span>,</span><br><span class="line">            <span class="string">&quot;NOSCRIPT&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;reply_schema&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;description&quot;</span>: <span class="string">&quot;A simple string reply indicating that the rewriting started or is about to start ASAP&quot;</span>,</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<h2 id="代码分析"><a href="#代码分析" class="headerlink" title="代码分析"></a>代码分析</h2><h3 id="RDB-2"><a href="#RDB-2" class="headerlink" title="RDB"></a>RDB</h3><p>-&gt; bgsaveCommand:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* BGSAVE [SCHEDULE] */</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">bgsaveCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> schedule = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* The SCHEDULE option changes the behavior of BGSAVE when an AOF rewrite</span></span><br><span class="line"><span class="comment">     * is in progress. Instead of returning an error a BGSAVE gets scheduled. */</span></span><br><span class="line">    <span class="comment">// 判断是否有参数</span></span><br><span class="line">    <span class="keyword">if</span> (c-&gt;argc &gt; <span class="number">1</span>) &#123;</span><br><span class="line">        <span class="comment">// 如果参数为 &quot;schedule&quot;，设置schedule为1</span></span><br><span class="line">        <span class="keyword">if</span> (c-&gt;argc == <span class="number">2</span> &amp;&amp; !strcasecmp(c-&gt;argv[<span class="number">1</span>]-&gt;ptr,<span class="string">&quot;schedule&quot;</span>)) &#123;</span><br><span class="line">            schedule = <span class="number">1</span>;</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;<span class="comment">// 参数不为 &quot;schedule&quot;，返回语法错误</span></span><br><span class="line">            addReplyErrorObject(c,shared.syntaxerr);</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    rdbSaveInfo rsi, *rsiptr;</span><br><span class="line">    rsiptr = rdbPopulateSaveInfo(&amp;rsi); <span class="comment">// 获取RDB保存信息</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (server.child_type == CHILD_TYPE_RDB) &#123;  <span class="comment">// 如果当前已经有一个RDB保存进程在运行，则返回错误</span></span><br><span class="line">        addReplyError(c,<span class="string">&quot;Background save already in progress&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (hasActiveChildProcess() || server.in_exec) &#123; <span class="comment">// 如果有其他子进程在运行或者处于事务执行状态</span></span><br><span class="line">        <span class="keyword">if</span> (schedule || server.in_exec) &#123; <span class="comment">// 如果设置了schedule或者处于事务执行状态，计划执行BGSAVE</span></span><br><span class="line">            server.rdb_bgsave_scheduled = <span class="number">1</span>;</span><br><span class="line">            addReplyStatus(c,<span class="string">&quot;Background saving scheduled&quot;</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123; <span class="comment">// 否则返回错误，提示用户设置SCHEDULE</span></span><br><span class="line">            addReplyError(c,</span><br><span class="line">            <span class="string">&quot;Another child process is active (AOF?): can&#x27;t BGSAVE right now. &quot;</span></span><br><span class="line">            <span class="string">&quot;Use BGSAVE SCHEDULE in order to schedule a BGSAVE whenever &quot;</span></span><br><span class="line">            <span class="string">&quot;possible.&quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; </span><br><span class="line">    <span class="comment">// 执行rdbsave</span></span><br><span class="line">    <span class="keyword">else</span> <span class="keyword">if</span> (rdbSaveBackground(SLAVE_REQ_NONE,server.rdb_filename,rsiptr,RDBFLAGS_NONE) == C_OK) &#123;</span><br><span class="line">        addReplyStatus(c,<span class="string">&quot;Background saving started&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        addReplyErrorObject(c,shared.err);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; bgsaveCommand -&gt; rdbSaveBackground:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">rdbSaveBackground</span><span class="params">(<span class="keyword">int</span> req, <span class="keyword">char</span> *filename, rdbSaveInfo *rsi, <span class="keyword">int</span> rdbflags)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">pid_t</span> childpid;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (hasActiveChildProcess()) <span class="keyword">return</span> C_ERR; <span class="comment">// 检查是否有其他子进程正在运行，如果有则返回错误</span></span><br><span class="line">    server.stat_rdb_saves++; <span class="comment">// 递增RDB保存的计数器</span></span><br><span class="line"></span><br><span class="line">    server.dirty_before_bgsave = server.dirty; <span class="comment">// 保存BGSAVE开始前的脏页数</span></span><br><span class="line">    server.lastbgsave_try = time(<span class="literal">NULL</span>); <span class="comment">// 设置最后一次尝试BGSAVE的时间为当前时间</span></span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> ((childpid = redisFork(CHILD_TYPE_RDB)) == <span class="number">0</span>) &#123; <span class="comment">// 创建子进程来进行RDB保存操作</span></span><br><span class="line">        <span class="keyword">int</span> retval;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Child */</span></span><br><span class="line">        redisSetProcTitle(<span class="string">&quot;redis-rdb-bgsave&quot;</span>); <span class="comment">// 设置子进程的进程名</span></span><br><span class="line">        <span class="comment">// bgsave_cpulist是一个字符串变量，它表示后台保存（bgsave）进程的CPU亲和性列表。</span></span><br><span class="line">        <span class="comment">// CPU亲和性是一个系统特性，可以将进程绑定到一个或多个CPU核心上，以提高性能。</span></span><br><span class="line">        <span class="comment">// 在多核CPU系统中，操作系统会自动将进程分配到不同的CPU核心上运行，以达到负载均衡。</span></span><br><span class="line">        <span class="comment">// 然而，这种自动分配可能会导致一个进程在运行过程中不断地在不同的CPU核心之间迁移，</span></span><br><span class="line">        <span class="comment">// 从而导致CPU缓存失效，降低性能。通过设置CPU亲和性，可以将进程绑定到特定的CPU核心上运行，</span></span><br><span class="line">        <span class="comment">// 避免不必要的CPU迁移，提高性能。</span></span><br><span class="line">        <span class="comment">// 在Redis中，可以通过bgsave_cpulist变量来设置bgsave进程的CPU亲和性。</span></span><br><span class="line">        <span class="comment">// 例如，如果你的系统有4个CPU核心，你可以设置bgsave_cpulist为&quot;0-3&quot;，表示将bgsave进程绑定到所有的CPU核心上；</span></span><br><span class="line">        <span class="comment">// 或者设置为&quot;1,3&quot;，表示将bgsave进程绑定到第2个和第4个CPU核心上。</span></span><br><span class="line">        redisSetCpuAffinity(server.bgsave_cpulist);</span><br><span class="line">        retval = rdbSave(req, filename,rsi,rdbflags);</span><br><span class="line">        <span class="keyword">if</span> (retval == C_OK) &#123;</span><br><span class="line">            sendChildCowInfo(CHILD_INFO_TYPE_RDB_COW_SIZE, <span class="string">&quot;RDB&quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        exitFromChild((retval == C_OK) ? <span class="number">0</span> : <span class="number">1</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">/* Parent */</span></span><br><span class="line">        <span class="keyword">if</span> (childpid == <span class="number">-1</span>) &#123;</span><br><span class="line">            server.lastbgsave_status = C_ERR;</span><br><span class="line">            serverLog(LL_WARNING,<span class="string">&quot;Can&#x27;t save in background: fork: %s&quot;</span>,</span><br><span class="line">                strerror(errno));</span><br><span class="line">            <span class="keyword">return</span> C_ERR;</span><br><span class="line">        &#125;</span><br><span class="line">        serverLog(LL_NOTICE,<span class="string">&quot;Background saving started by pid %ld&quot;</span>,(<span class="keyword">long</span>) childpid);</span><br><span class="line">        server.rdb_save_time_start = time(<span class="literal">NULL</span>);</span><br><span class="line">        server.rdb_child_type = RDB_CHILD_TYPE_DISK;</span><br><span class="line">        <span class="keyword">return</span> C_OK;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> C_OK; <span class="comment">/* unreached */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; bgsaveCommand -&gt; rdbSaveBackground -&gt; rdbSave:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Save the DB on disk. Return C_ERR on error, C_OK on success. */</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">rdbSave</span><span class="params">(<span class="keyword">int</span> req, <span class="keyword">char</span> *filename, rdbSaveInfo *rsi, <span class="keyword">int</span> rdbflags)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">char</span> tmpfile[<span class="number">256</span>]; <span class="comment">//创建临时文件名变量</span></span><br><span class="line">    <span class="comment">// 创建当前工作目录路径变量，用于错误信息存储</span></span><br><span class="line">    <span class="keyword">char</span> cwd[MAXPATHLEN]; <span class="comment">/* Current working dir path for error messages. */</span></span><br><span class="line">    <span class="comment">// 开始保存操作</span></span><br><span class="line">    startSaving(RDBFLAGS_NONE);</span><br><span class="line">    <span class="comment">// 根据当前进程id生成临时文件</span></span><br><span class="line">    <span class="built_in">snprintf</span>(tmpfile,<span class="number">256</span>,<span class="string">&quot;temp-%d.rdb&quot;</span>, (<span class="keyword">int</span>) getpid());</span><br><span class="line">    <span class="comment">// 调用内部函数进行实际的保存操作，如果失败则返回错误</span></span><br><span class="line">    <span class="keyword">if</span> (rdbSaveInternal(req,tmpfile,rsi,rdbflags) != C_OK) &#123;</span><br><span class="line">        <span class="comment">// 停止保存</span></span><br><span class="line">        stopSaving(<span class="number">0</span>);</span><br><span class="line">        <span class="keyword">return</span> C_ERR;</span><br><span class="line">    &#125;</span><br><span class="line">    </span><br><span class="line">    <span class="comment">/* Use RENAME to make sure the DB file is changed atomically only</span></span><br><span class="line"><span class="comment">     * if the generate DB file is ok. */</span></span><br><span class="line">    <span class="comment">// 重命名临时文件为目标文件名，如果失败则返回错误</span></span><br><span class="line">    <span class="keyword">if</span> (rename(tmpfile,filename) == <span class="number">-1</span>) &#123;</span><br><span class="line">        <span class="keyword">char</span> *str_err = strerror(errno); <span class="comment">// 获取错误信息</span></span><br><span class="line">        <span class="keyword">char</span> *cwdp = getcwd(cwd,MAXPATHLEN); <span class="comment">// 获取当前工作目录</span></span><br><span class="line">        serverLog(LL_WARNING,</span><br><span class="line">            <span class="string">&quot;Error moving temp DB file %s on the final &quot;</span></span><br><span class="line">            <span class="string">&quot;destination %s (in server root dir %s): %s&quot;</span>,</span><br><span class="line">            tmpfile, <span class="comment">// 输出错误日志</span></span><br><span class="line">            filename,</span><br><span class="line">            cwdp ? cwdp : <span class="string">&quot;unknown&quot;</span>,</span><br><span class="line">            str_err);</span><br><span class="line">        unlink(tmpfile);<span class="comment">// 删除临时文件</span></span><br><span class="line">        stopSaving(<span class="number">0</span>);<span class="comment">// 停止保存操作</span></span><br><span class="line">        <span class="keyword">return</span> C_ERR; <span class="comment">// 返回错误</span></span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// fsyncFileDir函数的作用是将某个目录下的所有更改（例如新建文件、删除文件、重命名文件等）同步到磁盘。</span></span><br><span class="line">    <span class="comment">// 它是通过调用fsync系统调用对该目录的文件描述符进行操作实现的。</span></span><br><span class="line">    <span class="comment">// 在文件系统中，为了提高效率，操作系统通常会将文件或目录的更改暂时保存在内存中，而不是立刻写入磁盘。</span></span><br><span class="line">    <span class="comment">// 这种技术被称为缓存（buffering）或者延迟写入（delayed writing）。</span></span><br><span class="line">    <span class="comment">// 然而，如果系统突然崩溃或者断电，那么这些还未写入磁盘的更改就会丢失。</span></span><br><span class="line">    <span class="comment">// 为了防止这种情况的发生，我们可以使用fsync系统调用强制将这些更改立刻写入磁盘。</span></span><br><span class="line">    <span class="comment">// fsync系统调用可以确保在函数返回时，相关的更改已经被持久化到磁盘上。</span></span><br><span class="line">    <span class="comment">// fsyncFileDir函数就是使用fsync系统调用来同步目录的更改的。在Redis中，</span></span><br><span class="line">    <span class="comment">// 当数据被写入临时文件并重命名为目标文件名后，fsyncFileDir函数会被调用来确保这个重命名操作被持久化到磁盘上，</span></span><br><span class="line">    <span class="comment">// 从而保证数据的安全性。</span></span><br><span class="line">    <span class="keyword">if</span> (fsyncFileDir(filename) != <span class="number">0</span>) &#123;<span class="comment">// 对目标文件所在的目录进行同步操作，如果失败则返回错误</span></span><br><span class="line">        serverLog(LL_WARNING,</span><br><span class="line">            <span class="string">&quot;Failed to fsync directory while saving DB: %s&quot;</span>, strerror(errno)); <span class="comment">// 输出错误日志</span></span><br><span class="line">        stopSaving(<span class="number">0</span>); <span class="comment">// 停止保存操作</span></span><br><span class="line">        <span class="keyword">return</span> C_ERR; <span class="comment">// 返回错误</span></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    serverLog(LL_NOTICE,<span class="string">&quot;DB saved on disk&quot;</span>); <span class="comment">// 输出保存成功的日志</span></span><br><span class="line">    server.dirty = <span class="number">0</span>; <span class="comment">// 重置脏页计数器</span></span><br><span class="line">    server.lastsave = time(<span class="literal">NULL</span>); <span class="comment">// 设置最后保存时间为当前时间</span></span><br><span class="line">    server.lastbgsave_status = C_OK; <span class="comment">// 设置最后一次后台保存的状态为成功</span></span><br><span class="line">    stopSaving(<span class="number">1</span>); <span class="comment">// 停止保存操作</span></span><br><span class="line">    <span class="keyword">return</span> C_OK;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; bgsaveCommand -&gt; rdbSaveBackground -&gt; rdbSave -&gt; startSaving:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">startSaving</span><span class="params">(<span class="keyword">int</span> rdbflags)</span> </span>&#123;</span><br><span class="line">    <span class="comment">/* Fire the persistence modules start event. */</span></span><br><span class="line">    <span class="keyword">int</span> subevent;</span><br><span class="line">    <span class="keyword">if</span> (rdbflags &amp; RDBFLAGS_AOF_PREAMBLE &amp;&amp; getpid() != server.pid)</span><br><span class="line">        <span class="comment">// 如果是AOF预备，并且不是主进程，则设置子事件为AOF开始</span></span><br><span class="line">        subevent = REDISMODULE_SUBEVENT_PERSISTENCE_AOF_START;</span><br><span class="line">    <span class="keyword">else</span> <span class="keyword">if</span> (rdbflags &amp; RDBFLAGS_AOF_PREAMBLE)</span><br><span class="line">        <span class="comment">// 如果是AOF预备，设置子事件为同步AOF开始</span></span><br><span class="line">        subevent = REDISMODULE_SUBEVENT_PERSISTENCE_SYNC_AOF_START;</span><br><span class="line">    <span class="keyword">else</span> <span class="keyword">if</span> (getpid()!=server.pid)</span><br><span class="line">        <span class="comment">// 如果不是主进程，设置子事件为RDB开始</span></span><br><span class="line">        subevent = REDISMODULE_SUBEVENT_PERSISTENCE_RDB_START;</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">        <span class="comment">// 否则，设置子事件为同步RDB开始</span></span><br><span class="line">        subevent = REDISMODULE_SUBEVENT_PERSISTENCE_SYNC_RDB_START;</span><br><span class="line">    <span class="comment">// 触发持久化模块的开始事件</span></span><br><span class="line">    moduleFireServerEvent(REDISMODULE_EVENT_PERSISTENCE,subevent,<span class="literal">NULL</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; bgsaveCommand -&gt; rdbSaveBackground -&gt; rdbSave -&gt; rdbSaveInternal:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">int</span> <span class="title">rdbSaveInternal</span><span class="params">(<span class="keyword">int</span> req, <span class="keyword">const</span> <span class="keyword">char</span> *filename, rdbSaveInfo *rsi, <span class="keyword">int</span> rdbflags)</span> </span>&#123;</span><br><span class="line">    <span class="comment">/* 当前工作目录的路径，用于错误消息 */</span></span><br><span class="line">    <span class="keyword">char</span> cwd[MAXPATHLEN]; <span class="comment">/* Current working dir path for error messages. */</span></span><br><span class="line">    <span class="comment">/* 当前工作目录的路径，用于错误消息 */</span></span><br><span class="line">    rio rdb;</span><br><span class="line">    <span class="keyword">int</span> error = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">int</span> saved_errno;</span><br><span class="line">    <span class="keyword">char</span> *err_op;    <span class="comment">/* For a detailed log */</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 打开指定的文件，准备写入 */</span></span><br><span class="line">    FILE *fp = fopen(filename,<span class="string">&quot;w&quot;</span>);</span><br><span class="line">    <span class="keyword">if</span> (!fp) &#123;</span><br><span class="line">        <span class="comment">/* 如果文件打开失败，记录错误信息并返回 */</span></span><br><span class="line">        saved_errno = errno;</span><br><span class="line">        <span class="keyword">char</span> *str_err = strerror(errno);</span><br><span class="line">        <span class="keyword">char</span> *cwdp = getcwd(cwd,MAXPATHLEN);</span><br><span class="line">        serverLog(LL_WARNING,</span><br><span class="line">            <span class="string">&quot;Failed opening the temp RDB file %s (in server root dir %s) &quot;</span></span><br><span class="line">            <span class="string">&quot;for saving: %s&quot;</span>,</span><br><span class="line">            filename,</span><br><span class="line">            cwdp ? cwdp : <span class="string">&quot;unknown&quot;</span>,</span><br><span class="line">            str_err);</span><br><span class="line">        errno = saved_errno;</span><br><span class="line">        <span class="keyword">return</span> C_ERR;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 以fp初始化Rio对象 */</span></span><br><span class="line">    rioInitWithFile(&amp;rdb,fp);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 如果设置了增量fsync，设置自动同步和回收缓存 */</span></span><br><span class="line">    <span class="keyword">if</span> (server.rdb_save_incremental_fsync) &#123;</span><br><span class="line">        rioSetAutoSync(&amp;rdb,REDIS_AUTOSYNC_BYTES);</span><br><span class="line">        <span class="keyword">if</span> (!(rdbflags &amp; RDBFLAGS_KEEP_CACHE)) rioSetReclaimCache(&amp;rdb,<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 使用Rio对象保存RDB */</span></span><br><span class="line">    <span class="keyword">if</span> (rdbSaveRio(req,&amp;rdb,&amp;error,rdbflags,rsi) == C_ERR) &#123;</span><br><span class="line">        errno = error;</span><br><span class="line">        err_op = <span class="string">&quot;rdbSaveRio&quot;</span>;</span><br><span class="line">        <span class="keyword">goto</span> werr;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Make sure data will not remain on the OS&#x27;s output buffers */</span></span><br><span class="line">    <span class="keyword">if</span> (fflush(fp)) &#123; err_op = <span class="string">&quot;fflush&quot;</span>; <span class="keyword">goto</span> werr; &#125;</span><br><span class="line">    <span class="keyword">if</span> (fsync(fileno(fp))) &#123; err_op = <span class="string">&quot;fsync&quot;</span>; <span class="keyword">goto</span> werr; &#125;</span><br><span class="line">    <span class="keyword">if</span> (!(rdbflags &amp; RDBFLAGS_KEEP_CACHE) &amp;&amp; reclaimFilePageCache(fileno(fp), <span class="number">0</span>, <span class="number">0</span>) == <span class="number">-1</span>) &#123;</span><br><span class="line">        serverLog(LL_NOTICE,<span class="string">&quot;Unable to reclaim cache after saving RDB: %s&quot;</span>, strerror(errno));</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (fclose(fp)) &#123; fp = <span class="literal">NULL</span>; err_op = <span class="string">&quot;fclose&quot;</span>; <span class="keyword">goto</span> werr; &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> C_OK;</span><br><span class="line"></span><br><span class="line">werr:</span><br><span class="line">    saved_errno = errno;</span><br><span class="line">    serverLog(LL_WARNING,<span class="string">&quot;Write error while saving DB to the disk(%s): %s&quot;</span>, err_op, strerror(errno));</span><br><span class="line">    <span class="keyword">if</span> (fp) fclose(fp);</span><br><span class="line">    unlink(filename);</span><br><span class="line">    errno = saved_errno;</span><br><span class="line">    <span class="keyword">return</span> C_ERR;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; bgsaveCommand -&gt; rdbSaveBackground -&gt; rdbSave -&gt; rdbSaveInternal -&gt; rdbSaveRio:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Produces a dump of the database in RDB format sending it to the specified</span></span><br><span class="line"><span class="comment"> * Redis I/O channel. On success C_OK is returned, otherwise C_ERR</span></span><br><span class="line"><span class="comment"> * is returned and part of the output, or all the output, can be</span></span><br><span class="line"><span class="comment"> * missing because of I/O errors.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * When the function returns C_ERR and if &#x27;error&#x27; is not NULL, the</span></span><br><span class="line"><span class="comment"> * integer pointed by &#x27;error&#x27; is set to the value of errno just after the I/O</span></span><br><span class="line"><span class="comment"> * error. */</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">rdbSaveRio</span><span class="params">(<span class="keyword">int</span> req, rio *rdb, <span class="keyword">int</span> *error, <span class="keyword">int</span> rdbflags, rdbSaveInfo *rsi)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">char</span> magic[<span class="number">10</span>]; <span class="comment">/* RDB文件的魔数，用于识别RDB文件 */</span></span><br><span class="line">    <span class="keyword">uint64_t</span> cksum; <span class="comment">/* 校验和 */</span></span><br><span class="line">    <span class="keyword">long</span> key_counter = <span class="number">0</span>; <span class="comment">/* 键的计数器 */</span></span><br><span class="line">    <span class="keyword">int</span> j;</span><br><span class="line">    <span class="comment">/* 如果服务器设置了rdb_checksum，那么就更新校验和 */</span></span><br><span class="line">    <span class="keyword">if</span> (server.rdb_checksum)</span><br><span class="line">        rdb-&gt;update_cksum = rioGenericUpdateChecksum;</span><br><span class="line">    <span class="comment">/* 写入RDB的版本号 */</span></span><br><span class="line">    <span class="built_in">snprintf</span>(magic,<span class="keyword">sizeof</span>(magic),<span class="string">&quot;REDIS%04d&quot;</span>,RDB_VERSION);</span><br><span class="line">    <span class="keyword">if</span> (rdbWriteRaw(rdb,magic,<span class="number">9</span>) == <span class="number">-1</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">    <span class="comment">/* 保存RDB的附加信息 */</span></span><br><span class="line">    <span class="keyword">if</span> (rdbSaveInfoAuxFields(rdb,rdbflags,rsi) == <span class="number">-1</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">    <span class="comment">/* 保存模块的附加信息，如果不需要，就跳过 */</span></span><br><span class="line">    <span class="keyword">if</span> (!(req &amp; SLAVE_REQ_RDB_EXCLUDE_DATA) &amp;&amp; rdbSaveModulesAux(rdb, REDISMODULE_AUX_BEFORE_RDB) == <span class="number">-1</span>) <span class="keyword">goto</span> werr;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* save functions */</span></span><br><span class="line">    <span class="comment">/* 保存函数 */</span></span><br><span class="line">    <span class="keyword">if</span> (!(req &amp; SLAVE_REQ_RDB_EXCLUDE_FUNCTIONS) &amp;&amp; rdbSaveFunctions(rdb) == <span class="number">-1</span>) <span class="keyword">goto</span> werr;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* save all databases, skip this if we&#x27;re in functions-only mode */</span></span><br><span class="line">    <span class="comment">/* 保存所有数据库，如果是函数模式，就跳过 */</span></span><br><span class="line">    <span class="keyword">if</span> (!(req &amp; SLAVE_REQ_RDB_EXCLUDE_DATA)) &#123;</span><br><span class="line">        <span class="keyword">for</span> (j = <span class="number">0</span>; j &lt; server.dbnum; j++) &#123;</span><br><span class="line">            <span class="keyword">if</span> (rdbSaveDb(rdb, j, rdbflags, &amp;key_counter) == <span class="number">-1</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 保存模块的附加信息，如果不需要，就跳过 */</span></span><br><span class="line">    <span class="keyword">if</span> (!(req &amp; SLAVE_REQ_RDB_EXCLUDE_DATA) &amp;&amp; rdbSaveModulesAux(rdb, REDISMODULE_AUX_AFTER_RDB) == <span class="number">-1</span>) <span class="keyword">goto</span> werr;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* EOF opcode */</span></span><br><span class="line">    <span class="comment">/* 写入EOF操作码 */</span></span><br><span class="line">    <span class="keyword">if</span> (rdbSaveType(rdb,RDB_OPCODE_EOF) == <span class="number">-1</span>) <span class="keyword">goto</span> werr;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* CRC64 checksum. It will be zero if checksum computation is disabled, the</span></span><br><span class="line"><span class="comment">     * loading code skips the check in this case. */</span></span><br><span class="line">    <span class="comment">/* 计算并写入CRC64校验和，如果校验和计算被禁用，那么校验和将为0，加载代码将跳过检查 */</span></span><br><span class="line">    cksum = rdb-&gt;cksum;</span><br><span class="line">    memrev64ifbe(&amp;cksum);</span><br><span class="line">    <span class="keyword">if</span> (rioWrite(rdb,&amp;cksum,<span class="number">8</span>) == <span class="number">0</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">    <span class="keyword">return</span> C_OK; <span class="comment">/* 如果一切顺利，返回成功标志 */</span></span><br><span class="line"></span><br><span class="line">werr:</span><br><span class="line">    <span class="keyword">if</span> (error) *error = errno;</span><br><span class="line">    <span class="keyword">return</span> C_ERR;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; bgsaveCommand -&gt; rdbSaveBackground -&gt; rdbSave -&gt; rdbSaveInternal -&gt; rdbSaveRio -&gt; rdbSaveDb:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">ssize_t</span> <span class="title">rdbSaveDb</span><span class="params">(rio *rdb, <span class="keyword">int</span> dbid, <span class="keyword">int</span> rdbflags, <span class="keyword">long</span> *key_counter)</span> </span>&#123;</span><br><span class="line">    dictIterator *di;</span><br><span class="line">    dictEntry *de;</span><br><span class="line">    <span class="keyword">ssize_t</span> written = <span class="number">0</span>; <span class="comment">// 已写入的字节数</span></span><br><span class="line">    <span class="keyword">ssize_t</span> res; <span class="comment">// 用于保存函数返回值</span></span><br><span class="line">    <span class="keyword">static</span> <span class="keyword">long</span> <span class="keyword">long</span> info_updated_time = <span class="number">0</span>;</span><br><span class="line">    <span class="comment">// 文件类型名</span></span><br><span class="line">    <span class="keyword">char</span> *pname = (rdbflags &amp; RDBFLAGS_AOF_PREAMBLE) ? <span class="string">&quot;AOF rewrite&quot;</span> :  <span class="string">&quot;RDB&quot;</span>;</span><br><span class="line">    <span class="comment">// 获取数据库指针</span></span><br><span class="line">    redisDb *db = server.db + dbid;</span><br><span class="line">    <span class="comment">// 获取数据库键值对字典</span></span><br><span class="line">    dict *d = db-&gt;dict;</span><br><span class="line">    <span class="comment">// 如果字典为空直接返回</span></span><br><span class="line">    <span class="keyword">if</span> (dictSize(d) == <span class="number">0</span>) <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    <span class="comment">// 获取字典迭代器</span></span><br><span class="line">    di = dictGetSafeIterator(d);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Write the SELECT DB opcode */</span></span><br><span class="line">    <span class="comment">/* 写入选择数据库的操作码 */</span></span><br><span class="line">    <span class="keyword">if</span> ((res = rdbSaveType(rdb,RDB_OPCODE_SELECTDB)) &lt; <span class="number">0</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">    written += res;</span><br><span class="line">    <span class="comment">/* 写入数据库ID */</span></span><br><span class="line">    <span class="keyword">if</span> ((res = rdbSaveLen(rdb, dbid)) &lt; <span class="number">0</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">    written += res;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Write the RESIZE DB opcode. */</span></span><br><span class="line">    <span class="comment">/* 写入调整数据库大小的操作码 */</span></span><br><span class="line">    <span class="keyword">uint64_t</span> db_size, expires_size;</span><br><span class="line">    db_size = dictSize(db-&gt;dict);  <span class="comment">/* 获取键值对数量 */</span> </span><br><span class="line">    expires_size = dictSize(db-&gt;expires); <span class="comment">/* 获取过期键数量 */</span></span><br><span class="line">    <span class="keyword">if</span> ((res = rdbSaveType(rdb,RDB_OPCODE_RESIZEDB)) &lt; <span class="number">0</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">    written += res;</span><br><span class="line">    <span class="keyword">if</span> ((res = rdbSaveLen(rdb,db_size)) &lt; <span class="number">0</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">    written += res;</span><br><span class="line">    <span class="keyword">if</span> ((res = rdbSaveLen(rdb,expires_size)) &lt; <span class="number">0</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">    written += res;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* 遍历数据库，写入每个键值对 */</span></span><br><span class="line">    <span class="comment">/* Iterate this DB writing every entry */</span></span><br><span class="line">    <span class="keyword">while</span>((de = dictNext(di)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">        sds keystr = dictGetKey(de);<span class="comment">/* 获取键 */</span></span><br><span class="line">        robj key, *o = dictGetVal(de);<span class="comment">/* 获取值 */</span></span><br><span class="line">        <span class="keyword">long</span> <span class="keyword">long</span> expire; <span class="comment">/* 过期时间 */</span></span><br><span class="line">        <span class="comment">/* 写入键前的已处理字节数 */</span></span><br><span class="line">        <span class="keyword">size_t</span> rdb_bytes_before_key = rdb-&gt;processed_bytes;</span><br><span class="line"></span><br><span class="line">        initStaticStringObject(key,keystr);<span class="comment">/* 初始化键对象 */</span></span><br><span class="line">        expire = getExpire(db,&amp;key); <span class="comment">/* 获取键的过期时间 */</span></span><br><span class="line">        <span class="comment">/* 写入键值对和过期时间 */</span></span><br><span class="line">        <span class="keyword">if</span> ((res = rdbSaveKeyValuePair(rdb, &amp;key, o, expire, dbid)) &lt; <span class="number">0</span>) <span class="keyword">goto</span> werr;</span><br><span class="line">        written += res;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* In fork child process, we can try to release memory back to the</span></span><br><span class="line"><span class="comment">         * OS and possibly avoid or decrease COW. We give the dismiss</span></span><br><span class="line"><span class="comment">         * mechanism a hint about an estimated size of the object we stored. */</span></span><br><span class="line">        <span class="comment">/* 释放内存 */</span></span><br><span class="line">        <span class="keyword">size_t</span> dump_size = rdb-&gt;processed_bytes - rdb_bytes_before_key;</span><br><span class="line">        <span class="keyword">if</span> (server.in_fork_child) dismissObject(o, dump_size);</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Update child info every 1 second (approximately).</span></span><br><span class="line"><span class="comment">         * in order to avoid calling mstime() on each iteration, we will</span></span><br><span class="line"><span class="comment">         * check the diff every 1024 keys */</span></span><br><span class="line">        <span class="comment">/* 每1024个键更新一次信息 */</span></span><br><span class="line">        <span class="keyword">if</span> (((*key_counter)++ &amp; <span class="number">1023</span>) == <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="keyword">long</span> <span class="keyword">long</span> now = mstime(); <span class="comment">/* 获取当前时间 */</span></span><br><span class="line">            <span class="keyword">if</span> (now - info_updated_time &gt;= <span class="number">1000</span>) &#123;<span class="comment">/* 如果距离上次更新已经过了1秒 */</span></span><br><span class="line">                sendChildInfo(CHILD_INFO_TYPE_CURRENT_INFO, *key_counter, pname);</span><br><span class="line">                info_updated_time = now; <span class="comment">/* 更新信息更新时间 */</span></span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    dictReleaseIterator(di); <span class="comment">/* 释放迭代器 */</span></span><br><span class="line">    <span class="keyword">return</span> written;<span class="comment">/* 返回写入的字节数 */</span></span><br><span class="line"></span><br><span class="line">werr:</span><br><span class="line">    dictReleaseIterator(di);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; bgsaveCommand -&gt; rdbSaveBackground -&gt; rdbSave -&gt; rdbSaveInternal -&gt; rdbSaveRio -&gt; rdbSaveDb:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Save a key-value pair, with expire time, type, key, value.</span></span><br><span class="line"><span class="comment"> * On error -1 is returned.</span></span><br><span class="line"><span class="comment"> * On success if the key was actually saved 1 is returned. */</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">rdbSaveKeyValuePair</span><span class="params">(rio *rdb, robj *key, robj *val, <span class="keyword">long</span> <span class="keyword">long</span> expiretime, <span class="keyword">int</span> dbid)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 判断当前服务器的内存策略，查看是否开启了LRU和LFu策略</span></span><br><span class="line">    <span class="keyword">int</span> savelru = server.maxmemory_policy &amp; MAXMEMORY_FLAG_LRU;</span><br><span class="line">    <span class="keyword">int</span> savelfu = server.maxmemory_policy &amp; MAXMEMORY_FLAG_LFU;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Save the expire time */</span></span><br><span class="line">    <span class="comment">/* 如果存在过期时间，就保存过期时间 */</span></span><br><span class="line">    <span class="keyword">if</span> (expiretime != <span class="number">-1</span>) &#123;</span><br><span class="line">        <span class="comment">/* 保存过期时间的类型 */</span></span><br><span class="line">        <span class="keyword">if</span> (rdbSaveType(rdb,RDB_OPCODE_EXPIRETIME_MS) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">        <span class="comment">/* 保存过期时间 */</span></span><br><span class="line">        <span class="keyword">if</span> (rdbSaveMillisecondTime(rdb,expiretime) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Save the LRU info. */</span></span><br><span class="line">    <span class="comment">/* 如果开启了LRU，保存LRU信息 */</span></span><br><span class="line">    <span class="keyword">if</span> (savelru) &#123;</span><br><span class="line">        <span class="comment">/* 获取对象的空闲时间 */</span> </span><br><span class="line">        <span class="keyword">uint64_t</span> idletime = estimateObjectIdleTime(val);</span><br><span class="line">        idletime /= <span class="number">1000</span>; <span class="comment">/* Using seconds is enough and requires less space.*/</span>  <span class="comment">/* 转换为空闲秒数，减少空间占用 */</span></span><br><span class="line">        <span class="comment">/* 保存LRU的类型 */</span></span><br><span class="line">        <span class="keyword">if</span> (rdbSaveType(rdb,RDB_OPCODE_IDLE) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">        <span class="comment">/* 保存LRU的值 */</span></span><br><span class="line">        <span class="keyword">if</span> (rdbSaveLen(rdb,idletime) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Save the LFU info. */</span></span><br><span class="line">    <span class="comment">/* 如果开启了LFU，保存LFU信息 */</span></span><br><span class="line">    <span class="keyword">if</span> (savelfu) &#123;</span><br><span class="line">        <span class="keyword">uint8_t</span> buf[<span class="number">1</span>];</span><br><span class="line">        <span class="comment">/* 获取并减少对象的访问频率 */</span></span><br><span class="line">        buf[<span class="number">0</span>] = LFUDecrAndReturn(val);</span><br><span class="line">        <span class="comment">/* We can encode this in exactly two bytes: the opcode and an 8</span></span><br><span class="line"><span class="comment">         * bit counter, since the frequency is logarithmic with a 0-255 range.</span></span><br><span class="line"><span class="comment">         * Note that we do not store the halving time because to reset it</span></span><br><span class="line"><span class="comment">         * a single time when loading does not affect the frequency much. */</span></span><br><span class="line">        <span class="keyword">if</span> (rdbSaveType(rdb,RDB_OPCODE_FREQ) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">        <span class="keyword">if</span> (rdbWriteRaw(rdb,buf,<span class="number">1</span>) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Save type, key, value */</span></span><br><span class="line">    <span class="comment">/* 保存类型、键、值 */</span></span><br><span class="line">    <span class="keyword">if</span> (rdbSaveObjectType(rdb,val) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">    <span class="keyword">if</span> (rdbSaveStringObject(rdb,key) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line">    <span class="keyword">if</span> (rdbSaveObject(rdb,val,key,dbid) == <span class="number">-1</span>) <span class="keyword">return</span> <span class="number">-1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Delay return if required (for testing) */</span></span><br><span class="line">    <span class="comment">/* 如果需要（用于测试），延迟返回 */</span></span><br><span class="line">    <span class="keyword">if</span> (server.rdb_key_save_delay)</span><br><span class="line">        debugDelay(server.rdb_key_save_delay);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; saveCommand:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">saveCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (server.child_type == CHILD_TYPE_RDB) &#123; <span class="comment">// 检查当前是否有正在进行的RDB持久化操作（即正在执行BGSAVE或SAVE命令）</span></span><br><span class="line">        addReplyError(c,<span class="string">&quot;Background save already in progress&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    server.stat_rdb_saves++; <span class="comment">// 如果没有正在进行的RDB持久化操作，那么增加服务器的RDB持久化次数计数器</span></span><br><span class="line"></span><br><span class="line">    rdbSaveInfo rsi, *rsiptr; <span class="comment">// 定义一个rdbSaveInfo结构体变量rsi和一个指向rdbSaveInfo的指针变量rsiptr</span></span><br><span class="line">    rsiptr = rdbPopulateSaveInfo(&amp;rsi); <span class="comment">// 通过调用rdbPopulateSaveInfo函数，使用rsi的地址初始化rsiptr</span></span><br><span class="line">    <span class="comment">// 调用rdbSave函数进行RDB持久化操作，如果成功则返回C_OK</span></span><br><span class="line">    <span class="keyword">if</span> (rdbSave(SLAVE_REQ_NONE,server.rdb_filename,rsiptr,RDBFLAGS_NONE) == C_OK) &#123;</span><br><span class="line">        addReply(c,shared.ok);  <span class="comment">// 如果持久化成功，那么向客户端返回成功信息</span></span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        addReplyErrorObject(c,shared.err); <span class="comment">// 如果持久化失败，那么向客户端返回错误信息</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="AOF-2"><a href="#AOF-2" class="headerlink" title="AOF"></a>AOF</h3><p>-&gt; bgrewriteaofCommand :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">bgrewriteaofCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 如果当前已经有一个子进程在进行AOF重写，那么返回一个错误</span></span><br><span class="line">    <span class="keyword">if</span> (server.child_type == CHILD_TYPE_AOF) &#123;</span><br><span class="line">        addReplyError(c,<span class="string">&quot;Background append only file rewriting already in progress&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (hasActiveChildProcess() || server.in_exec) &#123;</span><br><span class="line">        <span class="comment">// 如果当前有活动的子进程（例如正在进行RDB持久化）或者服务器正在执行EXEC命令（事务），那么将AOF重写操作标记为“计划中”，稍后再执行</span></span><br><span class="line">        server.aof_rewrite_scheduled = <span class="number">1</span>;</span><br><span class="line">        <span class="comment">/* When manually triggering AOFRW we reset the count </span></span><br><span class="line"><span class="comment">         * so that it can be executed immediately. */</span></span><br><span class="line">        <span class="comment">/* 当手动触发AOFRW时，我们会重置连续失败计数，以便立即执行 */</span></span><br><span class="line">        server.stat_aofrw_consecutive_failures = <span class="number">0</span>;</span><br><span class="line">        addReplyStatus(c,<span class="string">&quot;Background append only file rewriting scheduled&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (rewriteAppendOnlyFileBackground() == C_OK) &#123;</span><br><span class="line">        <span class="comment">// 如果当前没有进行AOF重写，并且也没有活动的子进程，那么立即开始AOF重写</span></span><br><span class="line">        addReplyStatus(c,<span class="string">&quot;Background append only file rewriting started&quot;</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// 如果因为某些原因无法开始AOF重写，那么返回一个错误</span></span><br><span class="line">        addReplyError(c,<span class="string">&quot;Can&#x27;t execute an AOF background rewriting. &quot;</span></span><br><span class="line">                        <span class="string">&quot;Please check the server logs for more information.&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; bgrewriteaofCommand -&gt; rewriteAppendOnlyFileBackground:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* ----------------------------------------------------------------------------</span></span><br><span class="line"><span class="comment"> * AOF background rewrite</span></span><br><span class="line"><span class="comment"> * ------------------------------------------------------------------------- */</span></span><br><span class="line"></span><br><span class="line"><span class="comment">/* This is how rewriting of the append only file in background works:</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * 1) The user calls BGREWRITEAOF</span></span><br><span class="line"><span class="comment"> * 2) Redis calls this function, that forks():</span></span><br><span class="line"><span class="comment"> *    2a) the child rewrite the append only file in a temp file.</span></span><br><span class="line"><span class="comment"> *    2b) the parent open a new INCR AOF file to continue writing.</span></span><br><span class="line"><span class="comment"> * 3) When the child finished &#x27;2a&#x27; exists.</span></span><br><span class="line"><span class="comment"> * 4) The parent will trap the exit code, if it&#x27;s OK, it will:</span></span><br><span class="line"><span class="comment"> *    4a) get a new BASE file name and mark the previous (if we have) as the HISTORY type</span></span><br><span class="line"><span class="comment"> *    4b) rename(2) the temp file in new BASE file name</span></span><br><span class="line"><span class="comment"> *    4c) mark the rewritten INCR AOFs as history type</span></span><br><span class="line"><span class="comment"> *    4d) persist AOF manifest file</span></span><br><span class="line"><span class="comment"> *    4e) Delete the history files use bio</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="comment">/* 这个函数用于开始后台的AOF重写操作。AOF重写操作包括创建一个新的AOF文件，</span></span><br><span class="line"><span class="comment"> * 然后把当前数据库的所有数据写入到新的AOF文件中。这个函数首先会fork一个子进程来执行重写操作，</span></span><br><span class="line"><span class="comment"> * Z然后在父进程中打开一个新的增量AOF文件来继续写入新的命令。*/</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">rewriteAppendOnlyFileBackground</span><span class="params">(<span class="keyword">void</span>)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">pid_t</span> childpid;</span><br><span class="line">    <span class="comment">/* 如果当前已经有活动的子进程（例如正在进行AOF重写或者RDB持久化），那么返回一个错误 */</span></span><br><span class="line">    <span class="keyword">if</span> (hasActiveChildProcess()) <span class="keyword">return</span> C_ERR;</span><br><span class="line">    <span class="comment">/* 检查AOF目录是否存在，如果不存在则创建 */</span></span><br><span class="line">    <span class="keyword">if</span> (dirCreateIfMissing(server.aof_dirname) == <span class="number">-1</span>) &#123;</span><br><span class="line">        serverLog(LL_WARNING, <span class="string">&quot;Can&#x27;t open or create append-only dir %s: %s&quot;</span>,</span><br><span class="line">            server.aof_dirname, strerror(errno));</span><br><span class="line">        server.aof_lastbgrewrite_status = C_ERR;</span><br><span class="line">        <span class="keyword">return</span> C_ERR;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* We set aof_selected_db to -1 in order to force the next call to the</span></span><br><span class="line"><span class="comment">     * feedAppendOnlyFile() to issue a SELECT command. */</span></span><br><span class="line">    <span class="comment">/* 重置aof_selected_db为-1，这样在下次调用feedAppendOnlyFile()函数时，会发送一个SELECT命令 */</span></span><br><span class="line">    server.aof_selected_db = <span class="number">-1</span>;</span><br><span class="line">    <span class="comment">/* 把当前的AOF缓冲区的内容写入到磁盘，并打开一个新的增量AOF文件 */</span></span><br><span class="line">    flushAppendOnlyFile(<span class="number">1</span>);</span><br><span class="line">    <span class="keyword">if</span> (openNewIncrAofForAppend() != C_OK) &#123;</span><br><span class="line">        server.aof_lastbgrewrite_status = C_ERR;</span><br><span class="line">        <span class="keyword">return</span> C_ERR;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">/* 增加AOF重写的计数 */</span></span><br><span class="line">    server.stat_aof_rewrites++;</span><br><span class="line">    <span class="comment">/* 创建一个子进程来执行AOF重写操作 */</span></span><br><span class="line">    <span class="keyword">if</span> ((childpid = redisFork(CHILD_TYPE_AOF)) == <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="keyword">char</span> tmpfile[<span class="number">256</span>];</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Child */</span></span><br><span class="line">        <span class="comment">/* 设置进程标题 */</span></span><br><span class="line">        redisSetProcTitle(<span class="string">&quot;redis-aof-rewrite&quot;</span>);</span><br><span class="line">        <span class="comment">/* 设置CPU亲和性 */</span></span><br><span class="line">        redisSetCpuAffinity(server.aof_rewrite_cpulist);</span><br><span class="line">        <span class="comment">/* 创建一个临时的AOF文件 */</span></span><br><span class="line">        <span class="built_in">snprintf</span>(tmpfile,<span class="number">256</span>,<span class="string">&quot;temp-rewriteaof-bg-%d.aof&quot;</span>, (<span class="keyword">int</span>) getpid());</span><br><span class="line">        <span class="comment">/* 执行AOF重写操作，如果成功，那么退出子进程；如果失败，那么退出子进程并返回错误码1 */</span></span><br><span class="line">        <span class="keyword">if</span> (rewriteAppendOnlyFile(tmpfile) == C_OK) &#123;</span><br><span class="line">            serverLog(LL_NOTICE,</span><br><span class="line">                <span class="string">&quot;Successfully created the temporary AOF base file %s&quot;</span>, tmpfile);</span><br><span class="line">            sendChildCowInfo(CHILD_INFO_TYPE_AOF_COW_SIZE, <span class="string">&quot;AOF rewrite&quot;</span>);</span><br><span class="line">            exitFromChild(<span class="number">0</span>);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            exitFromChild(<span class="number">1</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">/* Parent */</span></span><br><span class="line">        <span class="comment">/* 父进程 */</span></span><br><span class="line">        <span class="comment">/* 如果fork失败，那么返回一个错误 */</span></span><br><span class="line">        <span class="keyword">if</span> (childpid == <span class="number">-1</span>) &#123;</span><br><span class="line">            server.aof_lastbgrewrite_status = C_ERR;</span><br><span class="line">            serverLog(LL_WARNING,</span><br><span class="line">                <span class="string">&quot;Can&#x27;t rewrite append only file in background: fork: %s&quot;</span>,</span><br><span class="line">                strerror(errno));</span><br><span class="line">            <span class="keyword">return</span> C_ERR;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">/* 如果fork成功，那么记录子进程的pid，并返回成功 */</span></span><br><span class="line">        serverLog(LL_NOTICE,</span><br><span class="line">            <span class="string">&quot;Background append only file rewriting started by pid %ld&quot;</span>,(<span class="keyword">long</span>) childpid);</span><br><span class="line">        server.aof_rewrite_scheduled = <span class="number">0</span>;</span><br><span class="line">        server.aof_rewrite_time_start = time(<span class="literal">NULL</span>);</span><br><span class="line">        <span class="keyword">return</span> C_OK;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> C_OK; <span class="comment">/* unreached */</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>-&gt; bgrewriteaofCommand -&gt; rewriteAppendOnlyFileBackground -&gt; rewriteAppendOnlyFile:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Write a sequence of commands able to fully rebuild the dataset into</span></span><br><span class="line"><span class="comment"> * &quot;filename&quot;. Used both by REWRITEAOF and BGREWRITEAOF.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * In order to minimize the number of commands needed in the rewritten</span></span><br><span class="line"><span class="comment"> * log Redis uses variadic commands when possible, such as RPUSH, SADD</span></span><br><span class="line"><span class="comment"> * and ZADD. However at max AOF_REWRITE_ITEMS_PER_CMD items per time</span></span><br><span class="line"><span class="comment"> * are inserted using a single command. */</span></span><br><span class="line"><span class="comment">/* 这个函数用于重写AOF文件，把所有能够完全重建数据集的命令写入到文件中。这个函数被REWRITEAOF和BGREWRITEAOF命令使用。*/</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">rewriteAppendOnlyFile</span><span class="params">(<span class="keyword">char</span> *filename)</span> </span>&#123;</span><br><span class="line">    rio aof;</span><br><span class="line">    FILE *fp = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="keyword">char</span> tmpfile[<span class="number">256</span>];</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Note that we have to use a different temp name here compared to the</span></span><br><span class="line"><span class="comment">     * one used by rewriteAppendOnlyFileBackground() function. */</span></span><br><span class="line">    <span class="comment">/* 创建一个临时的AOF文件，注意这里的文件名和rewriteAppendOnlyFileBackground()函数中的不同 */</span></span><br><span class="line">    <span class="built_in">snprintf</span>(tmpfile,<span class="number">256</span>,<span class="string">&quot;temp-rewriteaof-%d.aof&quot;</span>, (<span class="keyword">int</span>) getpid());</span><br><span class="line">    fp = fopen(tmpfile,<span class="string">&quot;w&quot;</span>);<span class="comment">/* 打开临时文件 */</span></span><br><span class="line">    <span class="keyword">if</span> (!fp) &#123;<span class="comment">/* 如果打开文件失败，则记录日志，并返回错误 */</span></span><br><span class="line">        serverLog(LL_WARNING, <span class="string">&quot;Opening the temp file for AOF rewrite in rewriteAppendOnlyFile(): %s&quot;</span>, strerror(errno));</span><br><span class="line">        <span class="keyword">return</span> C_ERR;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    rioInitWithFile(&amp;aof,fp);<span class="comment">/* 初始化rio结构体，用于后续的文件IO操作 */</span></span><br><span class="line">    <span class="comment">/* 如果启用了增量fsync，则设置自动同步，并设置回收缓存 */</span></span><br><span class="line">    <span class="keyword">if</span> (server.aof_rewrite_incremental_fsync) &#123;</span><br><span class="line">        rioSetAutoSync(&amp;aof,REDIS_AUTOSYNC_BYTES);</span><br><span class="line">        rioSetReclaimCache(&amp;aof,<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">/* 开始保存操作，如果使用了RDB格式的AOF预处理，则保存RDB格式的数据，否则保存普通格式的数据 */</span></span><br><span class="line">    startSaving(RDBFLAGS_AOF_PREAMBLE);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (server.aof_use_rdb_preamble) &#123;</span><br><span class="line">        <span class="keyword">int</span> error;</span><br><span class="line">        <span class="keyword">if</span> (rdbSaveRio(SLAVE_REQ_NONE,&amp;aof,&amp;error,RDBFLAGS_AOF_PREAMBLE,<span class="literal">NULL</span>) == C_ERR) &#123;</span><br><span class="line">            errno = error;</span><br><span class="line">            <span class="keyword">goto</span> werr;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (rewriteAppendOnlyFileRio(&amp;aof) == C_ERR) <span class="keyword">goto</span> werr;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Make sure data will not remain on the OS&#x27;s output buffers */</span></span><br><span class="line">    <span class="comment">/* 刷新文件缓冲区，确保所有数据都写入到磁盘 */</span></span><br><span class="line">    <span class="keyword">if</span> (fflush(fp)) <span class="keyword">goto</span> werr;</span><br><span class="line">    <span class="keyword">if</span> (fsync(fileno(fp))) <span class="keyword">goto</span> werr;</span><br><span class="line">    <span class="comment">/* 回收文件页缓存 */</span></span><br><span class="line">    <span class="keyword">if</span> (reclaimFilePageCache(fileno(fp), <span class="number">0</span>, <span class="number">0</span>) == <span class="number">-1</span>) &#123;</span><br><span class="line">        <span class="comment">/* 如果回收失败，记录日志，但不中断操作 */</span></span><br><span class="line">        <span class="comment">/* A minor error. Just log to know what happens */</span></span><br><span class="line">        serverLog(LL_NOTICE,<span class="string">&quot;Unable to reclaim page cache: %s&quot;</span>, strerror(errno));</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">/* 关闭文件，如果失败，则跳转到错误处理部分 */</span></span><br><span class="line">    <span class="keyword">if</span> (fclose(fp)) &#123; fp = <span class="literal">NULL</span>; <span class="keyword">goto</span> werr; &#125;</span><br><span class="line">    fp = <span class="literal">NULL</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Use RENAME to make sure the DB file is changed atomically only</span></span><br><span class="line"><span class="comment">     * if the generate DB file is ok. */</span></span><br><span class="line">    <span class="comment">/* 使用rename命令把临时文件重命名为目标文件，这样可以保证只有在临时文件生成成功的情况下，才会修改目标文件 */</span></span><br><span class="line">    <span class="keyword">if</span> (rename(tmpfile,filename) == <span class="number">-1</span>) &#123;</span><br><span class="line">        serverLog(LL_WARNING,<span class="string">&quot;Error moving temp append only file on the final destination: %s&quot;</span>, strerror(errno));</span><br><span class="line">        unlink(tmpfile);</span><br><span class="line">        stopSaving(<span class="number">0</span>);</span><br><span class="line">        <span class="keyword">return</span> C_ERR;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">/* 停止保存操作，并返回成功 */</span></span><br><span class="line">    stopSaving(<span class="number">1</span>);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">return</span> C_OK;</span><br><span class="line"></span><br><span class="line">werr:</span><br><span class="line">    <span class="comment">/* 错误处理部分：记录日志，关闭文件，删除临时文件，停止保存操作，并返回错误 */</span></span><br><span class="line">    serverLog(LL_WARNING,<span class="string">&quot;Write error writing append only file on disk: %s&quot;</span>, strerror(errno));</span><br><span class="line">    <span class="keyword">if</span> (fp) fclose(fp);</span><br><span class="line">    unlink(tmpfile);</span><br><span class="line">    stopSaving(<span class="number">0</span>);</span><br><span class="line">    <span class="keyword">return</span> C_ERR;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<h1 id="遇到的问题"><a href="#遇到的问题" class="headerlink" title="遇到的问题"></a>遇到的问题</h1><p>1.在bgsave时遇到了下面这个报错</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">(error) MISCONF Redis is configured to save RDB snapshots, but it<span class="number">&#x27;</span>s currently unable to persist to disk. Commands that may modify the data <span class="built_in">set</span> are disabled, <span class="function">because <span class="keyword">this</span> instance is configured to report errors during writes <span class="keyword">if</span> RDB snapshotting <span class="title">fails</span> <span class="params">(stop-writes-on-bgsave-error option)</span>. Please check the Redis logs <span class="keyword">for</span> details about the RDB error.</span></span><br></pre></td></tr></table></figure>
+<p>信号5在大多数系统中被定义为SIGTRAP，它通常与调试器和其他调试工具相关。由于Redis并未设置处理这个信号，<br>所以接收到这个信号时会导致进程终止。<br>这种情况的出现可能有以下原因：<br>    1. 一些监控或者调试工具向Redis进程发送了SIGTRAP信号。<br>    2. Redis进程本身出现了一些内部错误，例如内存访问错误等。<br>最终排查到这个信号来自于我的IDE的debug</p>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2023/09/27/redis/redis_aof_and_rdb/" title="源码阅读(九)-Redis中的AOF与RDB">https://nytech3.github.io/2023/09/27/redis/redis_aof_and_rdb/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/c/" rel="tag"># c</a>
+              <a href="/tags/redis/" rel="tag"># redis</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/09/26/redis/redis_pipeline/" rel="prev" title="源码阅读(八)-Redis中的MULTI命令(PIPELINE)">
+      <i class="fa fa-chevron-left"></i> 源码阅读(八)-Redis中的MULTI命令(PIPELINE)
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2024/06/12/jvm/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3JAVA%E8%99%9A%E6%8B%9F%E6%9C%BA/%E6%B7%B1%E5%85%A5%E7%90%86%E8%A7%A3JAVA%E8%99%9A%E6%8B%9F%E6%9C%BA/" rel="next" title="深入理解JAVA虚拟机">
+      深入理解JAVA虚拟机 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E7%AE%80%E4%BB%8B"><span class="nav-number">1.</span> <span class="nav-text">简介</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#RDB"><span class="nav-number">1.1.</span> <span class="nav-text">RDB</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#RDB%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B"><span class="nav-number">1.1.1.</span> <span class="nav-text">RDB工作流程</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#AOF"><span class="nav-number">1.2.</span> <span class="nav-text">AOF</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#AOF%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B"><span class="nav-number">1.2.1.</span> <span class="nav-text">AOF工作流程</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF"><span class="nav-number">2.</span> <span class="nav-text">使用场景</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#RDB-1"><span class="nav-number">2.1.</span> <span class="nav-text">RDB</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%98%E7%82%B9"><span class="nav-number">2.1.1.</span> <span class="nav-text">优点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%BA%E7%82%B9"><span class="nav-number">2.1.2.</span> <span class="nav-text">缺点</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#AOF-1"><span class="nav-number">2.2.</span> <span class="nav-text">AOF</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BC%98%E7%82%B9-1"><span class="nav-number">2.2.1.</span> <span class="nav-text">优点</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%BC%BA%E7%82%B9-1"><span class="nav-number">2.2.2.</span> <span class="nav-text">缺点</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90"><span class="nav-number">3.</span> <span class="nav-text">源码解析</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#BGSAVE-json"><span class="nav-number">3.1.</span> <span class="nav-text">BGSAVE json</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#BGREWRITEAOF-json"><span class="nav-number">3.2.</span> <span class="nav-text">BGREWRITEAOF json</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">3.3.</span> <span class="nav-text">代码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#RDB-2"><span class="nav-number">3.3.1.</span> <span class="nav-text">RDB</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#AOF-2"><span class="nav-number">3.3.2.</span> <span class="nav-text">AOF</span></a></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%81%87%E5%88%B0%E7%9A%84%E9%97%AE%E9%A2%98"><span class="nav-number">4.</span> <span class="nav-text">遇到的问题</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

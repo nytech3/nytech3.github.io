@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="TODOBean的生命周期，以及各接口作用关于InitializingBean,DisposableBean,init-method,destroy-method,@PostConstruct,@PreDestroy, BeanPostProcessor , BeanNameAware , BeanClassLoaderAware , BeanFactoryAware">
+<meta property="og:type" content="article">
+<meta property="og:title" content="spring_关于spring生命周期的一次实践">
+<meta property="og:url" content="https://nytech3.github.io/2021/07/28/spring/spring_spring%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E5%AE%9E%E8%B7%B5/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="TODOBean的生命周期，以及各接口作用关于InitializingBean,DisposableBean,init-method,destroy-method,@PostConstruct,@PreDestroy, BeanPostProcessor , BeanNameAware , BeanClassLoaderAware , BeanFactoryAware">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-07-28T10:11:25.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:57.001Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="Spring">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/2021/07/28/spring/spring_spring%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E5%AE%9E%E8%B7%B5/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>spring_关于spring生命周期的一次实践 | nytech</title><meta name="robots" content="noindex">
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2021/07/28/spring/spring_spring%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E5%AE%9E%E8%B7%B5/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          spring_关于spring生命周期的一次实践
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-07-28 18:11:25" itemprop="dateCreated datePublished" datetime="2021-07-28T18:11:25+08:00">2021-07-28</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2021/07/28/spring/spring_spring%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E5%AE%9E%E8%B7%B5/" class="post-meta-item leancloud_visitors" data-flag-title="spring_关于spring生命周期的一次实践" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<h1 id="TODO"><a href="#TODO" class="headerlink" title="TODO"></a>TODO</h1><h1 id="Bean的生命周期，以及各接口作用"><a href="#Bean的生命周期，以及各接口作用" class="headerlink" title="Bean的生命周期，以及各接口作用"></a>Bean的生命周期，以及各接口作用</h1><p>关于InitializingBean,DisposableBean,init-method,destroy-method,@PostConstruct,@PreDestroy, BeanPostProcessor , BeanNameAware , BeanClassLoaderAware , BeanFactoryAware  </p>
+<span id="more"></span>
+
+<h1 id="实践"><a href="#实践" class="headerlink" title="实践"></a>实践</h1><blockquote>
+<p>com.example.demo.config.MyConfig</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> com.example.demo.config;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> com.example.demo.controller.A;</span><br><span class="line"><span class="keyword">import</span> com.example.demo.service.B;</span><br><span class="line"><span class="keyword">import</span> com.example.demo.service.C;</span><br><span class="line"><span class="keyword">import</span> org.springframework.context.annotation.Bean;</span><br><span class="line"><span class="keyword">import</span> org.springframework.context.annotation.Configuration;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * 类描述 :</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Author</span> JoeyTsai</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Time</span> 2021-06-30</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="meta">@Configuration</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MyConfig</span> </span>&#123;</span><br><span class="line">    <span class="meta">@Bean(initMethod = &quot;initMethod&quot;, destroyMethod = &quot;destroyMethod&quot;, name = &quot;c&quot;)</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> C <span class="title">getC</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        C c = <span class="keyword">new</span> C();</span><br><span class="line">        <span class="keyword">return</span> c;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Bean(initMethod = &quot;initMethod&quot;, destroyMethod = &quot;destroyMethod&quot;, name = &quot;b&quot;)</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> B <span class="title">getB</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        B b = <span class="keyword">new</span> B();</span><br><span class="line">        <span class="keyword">return</span> b;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>com.example.demo.service.B</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> com.example.demo.service;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> javax.annotation.PostConstruct;</span><br><span class="line"><span class="keyword">import</span> javax.annotation.PreDestroy;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.BeansException;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.BeanClassLoaderAware;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.BeanFactory;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.BeanFactoryAware;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.BeanNameAware;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.DisposableBean;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.InitializingBean;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.config.BeanPostProcessor;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * 类描述 :</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Author</span> JoeyTsai</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Time</span> 2021-06-30</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">B</span> <span class="keyword">implements</span> <span class="title">BeanPostProcessor</span>, <span class="title">BeanNameAware</span>, <span class="title">BeanClassLoaderAware</span>, <span class="title">BeanFactoryAware</span>, <span class="title">InitializingBean</span>, <span class="title">DisposableBean</span> </span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">B</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B Construct ... &quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">double</span> <span class="title">getRandom</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        <span class="keyword">return</span> Math.random();</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> Object <span class="title">postProcessBeforeInitialization</span><span class="params">(Object bean, String beanName)</span> <span class="keyword">throws</span> BeansException </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (bean <span class="keyword">instanceof</span> C) &#123;</span><br><span class="line">            System.out.println(beanName + <span class="string">&quot; postProcessBeforeInitialization &quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> bean;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@PostConstruct</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">postConstruct</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B PostConstruct ...&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@PreDestroy</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">preDestroy</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B preDestroy ...&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> Object <span class="title">postProcessAfterInitialization</span><span class="params">(Object bean, String beanName)</span> <span class="keyword">throws</span> BeansException </span>&#123;</span><br><span class="line">        <span class="keyword">if</span> (bean <span class="keyword">instanceof</span> C) &#123;</span><br><span class="line">            System.out.println(beanName + <span class="string">&quot; postProcessAfterInitialization &quot;</span>);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> bean;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setBeanName</span><span class="params">(String name)</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B NameWare , &quot;</span> + name);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setBeanClassLoader</span><span class="params">(ClassLoader classLoader)</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B classLoader &quot;</span> + classLoader.getClass());</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setBeanFactory</span><span class="params">(BeanFactory beanFactory)</span> <span class="keyword">throws</span> BeansException </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B BeanFactoryAware &quot;</span> + beanFactory.getBean(<span class="string">&quot;b&quot;</span>));</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">afterPropertiesSet</span><span class="params">()</span> <span class="keyword">throws</span> Exception </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B InitializingBean afterPropertiesSet&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title">initMethod</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B initMethod...&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">destroy</span><span class="params">()</span> <span class="keyword">throws</span> Exception </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B destroy&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title">destroyMethod</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;B destroyMethod&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<blockquote>
+<p>com.example.demo.service.C</p>
+</blockquote>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> com.example.demo.service;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> javax.annotation.PostConstruct;</span><br><span class="line"><span class="keyword">import</span> javax.annotation.PreDestroy;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.BeansException;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.BeanClassLoaderAware;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.BeanFactory;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.BeanFactoryAware;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.BeanNameAware;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.DisposableBean;</span><br><span class="line"><span class="keyword">import</span> org.springframework.beans.factory.InitializingBean;</span><br><span class="line"></span><br><span class="line"><span class="comment">/**</span></span><br><span class="line"><span class="comment"> * 类描述 :</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Author</span> JoeyTsai</span></span><br><span class="line"><span class="comment"> * <span class="doctag">@Time</span> 2021-07-01</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">C</span> <span class="keyword">implements</span> <span class="title">BeanNameAware</span>, <span class="title">BeanClassLoaderAware</span>, <span class="title">BeanFactoryAware</span>, <span class="title">InitializingBean</span>, <span class="title">DisposableBean</span> </span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="title">C</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C Construct ...&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setBeanClassLoader</span><span class="params">(ClassLoader classLoader)</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C classLoader &quot;</span> + classLoader.getClass());</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setBeanFactory</span><span class="params">(BeanFactory beanFactory)</span> <span class="keyword">throws</span> BeansException </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C BeanFactoryAware &quot;</span> + beanFactory.getBean(<span class="string">&quot;c&quot;</span>));</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@PreDestroy</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">preDestroy</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C preDestroy ...&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@PostConstruct</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">postConstruct</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C PostConstruct ...&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">setBeanName</span><span class="params">(String name)</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C NameWare , &quot;</span> + name);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">afterPropertiesSet</span><span class="params">()</span> <span class="keyword">throws</span> Exception </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C InitializingBean afterPropertiesSet&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title">initMethod</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C initMethod...&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="meta">@Override</span></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">void</span> <span class="title">destroy</span><span class="params">()</span> <span class="keyword">throws</span> Exception </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C destroy&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">private</span> <span class="keyword">void</span> <span class="title">destroyMethod</span><span class="params">()</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;C destroyMethod&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>输出结果</p>
+</blockquote>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br></pre></td><td class="code"><pre><span class="line">&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;bin&#x2F;java -XX:TieredStopAtLevel&#x3D;1 -noverify -Dspring.output.ansi.enabled&#x3D;always -Dcom.sun.management.jmxremote -Dspring.jmx.enabled&#x3D;true -Dspring.liveBeansView.mbeanDomain -Dspring.application.admin.enabled&#x3D;true &quot;-javaagent:&#x2F;Users&#x2F;joeytsai&#x2F;Library&#x2F;Application Support&#x2F;JetBrains&#x2F;Toolbox&#x2F;apps&#x2F;IDEA-U&#x2F;ch-0&#x2F;191.7141.44&#x2F;IntelliJ IDEA.app&#x2F;Contents&#x2F;lib&#x2F;idea_rt.jar&#x3D;62344:&#x2F;Users&#x2F;joeytsai&#x2F;Library&#x2F;Application Support&#x2F;JetBrains&#x2F;Toolbox&#x2F;apps&#x2F;IDEA-U&#x2F;ch-0&#x2F;191.7141.44&#x2F;IntelliJ IDEA.app&#x2F;Contents&#x2F;bin&quot; -Dfile.encoding&#x3D;UTF-8 -classpath &#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;charsets.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;deploy.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;cldrdata.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;dnsns.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;jaccess.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;jfxrt.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;localedata.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;nashorn.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;sunec.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;sunjce_provider.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;sunpkcs11.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;ext&#x2F;zipfs.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;javaws.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;jce.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;jfr.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;jfxswt.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;jsse.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;management-agent.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;plugin.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;resources.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;jre&#x2F;lib&#x2F;rt.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;lib&#x2F;ant-javafx.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;lib&#x2F;dt.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;lib&#x2F;javafx-mx.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;lib&#x2F;jconsole.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;lib&#x2F;packager.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;lib&#x2F;sa-jdi.jar:&#x2F;Library&#x2F;Java&#x2F;JavaVirtualMachines&#x2F;jdk1.8.0_202.jdk&#x2F;Contents&#x2F;Home&#x2F;lib&#x2F;tools.jar:&#x2F;Users&#x2F;joeytsai&#x2F;my_code&#x2F;java&#x2F;demo&#x2F;target&#x2F;classes:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot-starter&#x2F;2.5.2&#x2F;spring-boot-starter-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot&#x2F;2.5.2&#x2F;spring-boot-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-context&#x2F;5.3.8&#x2F;spring-context-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot-starter-logging&#x2F;2.5.2&#x2F;spring-boot-starter-logging-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;ch&#x2F;qos&#x2F;logback&#x2F;logback-classic&#x2F;1.2.3&#x2F;logback-classic-1.2.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;ch&#x2F;qos&#x2F;logback&#x2F;logback-core&#x2F;1.2.3&#x2F;logback-core-1.2.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;apache&#x2F;logging&#x2F;log4j&#x2F;log4j-to-slf4j&#x2F;2.14.1&#x2F;log4j-to-slf4j-2.14.1.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;apache&#x2F;logging&#x2F;log4j&#x2F;log4j-api&#x2F;2.14.1&#x2F;log4j-api-2.14.1.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;slf4j&#x2F;jul-to-slf4j&#x2F;1.7.31&#x2F;jul-to-slf4j-1.7.31.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;jakarta&#x2F;annotation&#x2F;jakarta.annotation-api&#x2F;1.3.5&#x2F;jakarta.annotation-api-1.3.5.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-core&#x2F;5.3.8&#x2F;spring-core-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-jcl&#x2F;5.3.8&#x2F;spring-jcl-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;yaml&#x2F;snakeyaml&#x2F;1.28&#x2F;snakeyaml-1.28.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;slf4j&#x2F;slf4j-api&#x2F;1.7.31&#x2F;slf4j-api-1.7.31.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot-autoconfigure&#x2F;2.5.2&#x2F;spring-boot-autoconfigure-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot-starter-tomcat&#x2F;2.5.2&#x2F;spring-boot-starter-tomcat-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;apache&#x2F;tomcat&#x2F;embed&#x2F;tomcat-embed-core&#x2F;9.0.48&#x2F;tomcat-embed-core-9.0.48.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;apache&#x2F;tomcat&#x2F;embed&#x2F;tomcat-embed-el&#x2F;9.0.48&#x2F;tomcat-embed-el-9.0.48.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;apache&#x2F;tomcat&#x2F;embed&#x2F;tomcat-embed-websocket&#x2F;9.0.48&#x2F;tomcat-embed-websocket-9.0.48.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot-starter-web&#x2F;2.5.2&#x2F;spring-boot-starter-web-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot-starter-json&#x2F;2.5.2&#x2F;spring-boot-starter-json-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;com&#x2F;fasterxml&#x2F;jackson&#x2F;core&#x2F;jackson-databind&#x2F;2.12.3&#x2F;jackson-databind-2.12.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;com&#x2F;fasterxml&#x2F;jackson&#x2F;core&#x2F;jackson-annotations&#x2F;2.12.3&#x2F;jackson-annotations-2.12.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;com&#x2F;fasterxml&#x2F;jackson&#x2F;core&#x2F;jackson-core&#x2F;2.12.3&#x2F;jackson-core-2.12.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;com&#x2F;fasterxml&#x2F;jackson&#x2F;datatype&#x2F;jackson-datatype-jdk8&#x2F;2.12.3&#x2F;jackson-datatype-jdk8-2.12.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;com&#x2F;fasterxml&#x2F;jackson&#x2F;datatype&#x2F;jackson-datatype-jsr310&#x2F;2.12.3&#x2F;jackson-datatype-jsr310-2.12.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;com&#x2F;fasterxml&#x2F;jackson&#x2F;module&#x2F;jackson-module-parameter-names&#x2F;2.12.3&#x2F;jackson-module-parameter-names-2.12.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-web&#x2F;5.3.8&#x2F;spring-web-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-beans&#x2F;5.3.8&#x2F;spring-beans-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-webmvc&#x2F;5.3.8&#x2F;spring-webmvc-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-expression&#x2F;5.3.8&#x2F;spring-expression-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot-starter-aop&#x2F;2.5.2&#x2F;spring-boot-starter-aop-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-aop&#x2F;5.3.8&#x2F;spring-aop-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;aspectj&#x2F;aspectjweaver&#x2F;1.9.6&#x2F;aspectjweaver-1.9.6.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;boot&#x2F;spring-boot-starter-jdbc&#x2F;2.5.2&#x2F;spring-boot-starter-jdbc-2.5.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;com&#x2F;zaxxer&#x2F;HikariCP&#x2F;4.0.3&#x2F;HikariCP-4.0.3.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-jdbc&#x2F;5.3.8&#x2F;spring-jdbc-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;springframework&#x2F;spring-tx&#x2F;5.3.8&#x2F;spring-tx-5.3.8.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;mysql&#x2F;mysql-connector-java&#x2F;8.0.17&#x2F;mysql-connector-java-8.0.17.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;mybatis&#x2F;spring&#x2F;boot&#x2F;mybatis-spring-boot-starter&#x2F;1.3.2&#x2F;mybatis-spring-boot-starter-1.3.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;mybatis&#x2F;spring&#x2F;boot&#x2F;mybatis-spring-boot-autoconfigure&#x2F;1.3.2&#x2F;mybatis-spring-boot-autoconfigure-1.3.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;mybatis&#x2F;mybatis&#x2F;3.4.6&#x2F;mybatis-3.4.6.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;mybatis&#x2F;mybatis-spring&#x2F;1.3.2&#x2F;mybatis-spring-1.3.2.jar:&#x2F;Users&#x2F;joeytsai&#x2F;.m2&#x2F;repository&#x2F;org&#x2F;projectlombok&#x2F;lombok&#x2F;1.18.18&#x2F;lombok-1.18.18.jar com.example.demo.DemoApplication</span><br><span class="line"></span><br><span class="line">  .   ____          _            __ _ _</span><br><span class="line"> &#x2F;\\ &#x2F; ___&#39;_ __ _ _(_)_ __  __ _ \ \ \ \</span><br><span class="line">( ( )\___ | &#39;_ | &#39;_| | &#39;_ \&#x2F; _&#96; | \ \ \ \</span><br><span class="line"> \\&#x2F;  ___)| |_)| | | | | || (_| |  ) ) ) )</span><br><span class="line">  &#39;  |____| .__|_| |_|_| |_\__, | &#x2F; &#x2F; &#x2F; &#x2F;</span><br><span class="line"> &#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;|_|&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;&#x3D;|___&#x2F;&#x3D;&#x2F;_&#x2F;_&#x2F;_&#x2F;</span><br><span class="line"> :: Spring Boot ::                (v2.5.2)</span><br><span class="line"></span><br><span class="line">2021-07-27 23:31:34.645  INFO 27790 --- [           main] com.example.demo.DemoApplication         : Starting DemoApplication using Java 1.8.0_202 on JoeyTsaideMacBook-Pro.local with PID 27790 (&#x2F;Users&#x2F;joeytsai&#x2F;my_code&#x2F;java&#x2F;demo&#x2F;target&#x2F;classes started by joeytsai in &#x2F;Users&#x2F;joeytsai&#x2F;my_code&#x2F;java&#x2F;demo)</span><br><span class="line">2021-07-27 23:31:34.661 DEBUG 27790 --- [           main] com.example.demo.DemoApplication         : Running with Spring Boot v2.5.2, Spring v5.3.8</span><br><span class="line">2021-07-27 23:31:34.662  INFO 27790 --- [           main] com.example.demo.DemoApplication         : No active profile set, falling back to default profiles: default</span><br><span class="line">2021-07-27 23:31:35.690  INFO 27790 --- [           main] trationDelegate$BeanPostProcessorChecker : Bean &#39;myConfig&#39; of type [com.example.demo.config.MyConfig$$EnhancerBySpringCGLIB$$a9c7ef81] is not eligible for getting processed by all BeanPostProcessors (for example: not eligible for auto-proxying)</span><br><span class="line">B Construct ... </span><br><span class="line">B BeanNameAware setBeanName , b</span><br><span class="line">B BeanClassLoaderAware setBeanClassLoader class sun.misc.Launcher$AppClassLoader</span><br><span class="line">B BeanFactoryAware com.example.demo.service.B@687a762c</span><br><span class="line">B PostConstruct ...</span><br><span class="line">B InitializingBean afterPropertiesSet</span><br><span class="line">B initMethod...</span><br><span class="line">2021-07-27 23:31:35.960  INFO 27790 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat initialized with port(s): 8080 (http)</span><br><span class="line">2021-07-27 23:31:35.972  INFO 27790 --- [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]</span><br><span class="line">2021-07-27 23:31:35.972  INFO 27790 --- [           main] org.apache.catalina.core.StandardEngine  : Starting Servlet engine: [Apache Tomcat&#x2F;9.0.48]</span><br><span class="line">2021-07-27 23:31:36.056  INFO 27790 --- [           main] o.a.c.c.C.[Tomcat].[localhost].[&#x2F;]       : Initializing Spring embedded WebApplicationContext</span><br><span class="line">2021-07-27 23:31:36.056  INFO 27790 --- [           main] w.s.c.ServletWebServerApplicationContext : Root WebApplicationContext: initialization completed in 1309 ms</span><br><span class="line">C Construct ...</span><br><span class="line">C BeanNameAware setBeanName , c</span><br><span class="line">C BeanClassLoaderAware setBeanClassLoader</span><br><span class="line">C BeanFactoryAware setBeanFactorycom.example.demo.service.C@2e647e59</span><br><span class="line">c postProcessBeforeInitialization </span><br><span class="line">C PostConstruct ...</span><br><span class="line">C InitializingBean afterPropertiesSet</span><br><span class="line">C initMethod...</span><br><span class="line">c postProcessAfterInitialization </span><br><span class="line">Loading class &#96;com.mysql.jdbc.Driver&#39;. This is deprecated. The new driver class is &#96;com.mysql.cj.jdbc.Driver&#39;. The driver is automatically registered via the SPI and manual loading of the driver class is generally unnecessary.</span><br><span class="line">2021-07-27 23:31:36.584  INFO 27790 --- [           main] o.s.b.w.embedded.tomcat.TomcatWebServer  : Tomcat started on port(s): 8080 (http) with context path &#39;&#39;</span><br><span class="line">2021-07-27 23:31:36.595  INFO 27790 --- [           main] com.example.demo.DemoApplication         : Started DemoApplication in 2.294 seconds (JVM running for 2.922)</span><br><span class="line">C PreDestroy ...</span><br><span class="line">C DisposableBean destroy</span><br><span class="line">C destroyMethod</span><br><span class="line">B PreDestroy ...</span><br><span class="line">B DisposableBean destroy</span><br><span class="line">B destroyMethod</span><br><span class="line"></span><br><span class="line">Process finished with exit code 130 (interrupted by signal 2: SIGINT)</span><br></pre></td></tr></table></figure>
+<h1 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h1><blockquote>
+<p>构造函数 &gt; BeanNameAware 接口&gt; BeanClassLoaderAware 接口 &gt; BeanFactoryAware 接口&gt; BeanPostProcessor 接口的postProcessBeforeInitialization &gt; @PostConstruct &gt; InitializingBean 接口 &gt; initMethod(init-method) &gt; BeanPostProcessor 接口的 postProcessAfterInitialization &gt; @PreDestroy &gt; DisposableBean接口 &gt; destroyMethod(destroy-method)</p>
+</blockquote>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line">C Construct ...</span><br><span class="line">C BeanNameAware setBeanName , c</span><br><span class="line">C BeanClassLoaderAware setBeanClassLoader</span><br><span class="line">C BeanFactoryAware setBeanFactorycom.example.demo.service.C@2e647e59</span><br><span class="line">c postProcessBeforeInitialization </span><br><span class="line">C PostConstruct ...</span><br><span class="line">C InitializingBean afterPropertiesSet</span><br><span class="line">C initMethod...</span><br><span class="line">c postProcessAfterInitialization </span><br><span class="line">C PreDestroy ...</span><br><span class="line">C DisposableBean destroy</span><br><span class="line">C destroyMethod</span><br></pre></td></tr></table></figure>
+
+<p>其中 PostConstruct 是javax中的标准不属于spring</p>
+<h1 id="源码"><a href="#源码" class="headerlink" title="源码"></a>源码</h1><p>TODO:</p>
+<h1 id="接口作用以及场景"><a href="#接口作用以及场景" class="headerlink" title="接口作用以及场景"></a>接口作用以及场景</h1><p>TODO:</p>
+<h1 id="图解"><a href="#图解" class="headerlink" title="图解"></a>图解</h1><p>TODO:</p>
+<h1 id="Q"><a href="#Q" class="headerlink" title="Q"></a>Q</h1><ol>
+<li>Process finished with exit code 130 (interrupted by signal 2: SIGINT) 的含义</li>
+</ol>
+<!-- flag of hidden posts -->
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2021/07/28/spring/spring_spring%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%E5%AE%9E%E8%B7%B5/" title="spring_关于spring生命周期的一次实践">https://nytech3.github.io/2021/07/28/spring/spring_spring生命周期实践/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/Spring/" rel="tag"># Spring</a>
+          </div>
+
+        
+
+
+        
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#TODO"><span class="nav-number">1.</span> <span class="nav-text">TODO</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Bean%E7%9A%84%E7%94%9F%E5%91%BD%E5%91%A8%E6%9C%9F%EF%BC%8C%E4%BB%A5%E5%8F%8A%E5%90%84%E6%8E%A5%E5%8F%A3%E4%BD%9C%E7%94%A8"><span class="nav-number">2.</span> <span class="nav-text">Bean的生命周期，以及各接口作用</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%AE%9E%E8%B7%B5"><span class="nav-number">3.</span> <span class="nav-text">实践</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E7%BB%93%E8%AE%BA"><span class="nav-number">4.</span> <span class="nav-text">结论</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%BA%90%E7%A0%81"><span class="nav-number">5.</span> <span class="nav-text">源码</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%8E%A5%E5%8F%A3%E4%BD%9C%E7%94%A8%E4%BB%A5%E5%8F%8A%E5%9C%BA%E6%99%AF"><span class="nav-number">6.</span> <span class="nav-text">接口作用以及场景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%9B%BE%E8%A7%A3"><span class="nav-number">7.</span> <span class="nav-text">图解</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Q"><span class="nav-number">8.</span> <span class="nav-text">Q</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

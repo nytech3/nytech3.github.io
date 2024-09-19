@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="数据链路层的三个基本问题数据链路层协议有很多种，但有三个基本问题是共同的。这三个基本问题是:封装成帧，透明传输，差错检测 封装成帧封装成帧就是在一段数据的前后分别添加首部和尾部，这样就构成了一个帧，接收端收到物理层上传的比特流之后，就能根据首部和尾部的标记，从比特流中识别帧的开始和结束。   帧的长度: 帧长 &#x3D; 数据部分长度 + 帧首尾长度    帧定界: 根据帧的首尾确定帧的界限   最大">
+<meta property="og:type" content="article">
+<meta property="og:title" content="计算机网络_体系结构_数据链路层">
+<meta property="og:url" content="https://nytech3.github.io/2021/05/13/network/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="数据链路层的三个基本问题数据链路层协议有很多种，但有三个基本问题是共同的。这三个基本问题是:封装成帧，透明传输，差错检测 封装成帧封装成帧就是在一段数据的前后分别添加首部和尾部，这样就构成了一个帧，接收端收到物理层上传的比特流之后，就能根据首部和尾部的标记，从比特流中识别帧的开始和结束。   帧的长度: 帧长 &#x3D; 数据部分长度 + 帧首尾长度    帧定界: 根据帧的首尾确定帧的界限   最大">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_03.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_02.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_01.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_04.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_05.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_06.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_07.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_08.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_01.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_02.jpg">
+<meta property="og:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_09.jpg">
+<meta property="article:published_time" content="2021-05-13T10:11:25.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:56.997Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="计算机网络">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://nytech3.github.io/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_03.jpg">
+
+<link rel="canonical" href="https://nytech3.github.io/2021/05/13/network/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>计算机网络_体系结构_数据链路层 | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2021/05/13/network/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          计算机网络_体系结构_数据链路层
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-05-13 18:11:25" itemprop="dateCreated datePublished" datetime="2021-05-13T18:11:25+08:00">2021-05-13</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2021/05/13/network/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82/" class="post-meta-item leancloud_visitors" data-flag-title="计算机网络_体系结构_数据链路层" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+
+<h1 id="数据链路层的三个基本问题"><a href="#数据链路层的三个基本问题" class="headerlink" title="数据链路层的三个基本问题"></a>数据链路层的三个基本问题</h1><p>数据链路层协议有很多种，但有三个基本问题是共同的。这三个基本问题是:封装成帧，透明传输，差错检测</p>
+<h2 id="封装成帧"><a href="#封装成帧" class="headerlink" title="封装成帧"></a>封装成帧</h2><p>封装成帧就是在一段数据的前后分别添加首部和尾部，这样就构成了一个帧，接收端收到物理层上传的比特流之后，就能根据首部和尾部的标记，从比特流中识别帧的开始和结束。  </p>
+<p>帧的长度: 帧长 = 数据部分长度 + 帧首尾长度   </p>
+<p>帧定界: 根据帧的首尾确定帧的界限  </p>
+<p>最大传送单元: 每一种链路层协议都规定了所能传送的帧的数据部分长度上限—-最大传送单元MTU(Maximum Transfer Unit) ,帧与MTU的关系如图所示<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_03.jpg" alt="network_体系结构_数据链路层_03">   </p>
+<h3 id="MTU-Maximum-Transfer-Unit"><a href="#MTU-Maximum-Transfer-Unit" class="headerlink" title="MTU(Maximum Transfer Unit)"></a>MTU(Maximum Transfer Unit)</h3><p>最大传输单元是指在数据链路层上面所能通过的最大数据包大小。最大传输单元这个参数通常与通信接口有关（网卡，串口等）。<br>在因特网协议中，一条因特网传输路径的“路径最大传输单元”被定义为从源地址到目的地址所经过“路径”上的所有IP的最大传输单元的最小值。或者从另外一个角度来看，就是无需进一步分片就能穿过这条“路径”的最大传输单元的最大值。<br>RFC 1191描述了“路径最大传输单元发现方法”，这是一种确定两个IP主机之间路径最大传输单元的技术，其目的是为了避免IP分片。在这项技术中，源地址将设置数据报的DF（Don’t Fragment，不要分片）标记位，再逐渐增大发送的数据报的大小——路径上任何需要将分组进行分片的设备都会将这种数据报丢弃并返回一个“数据报过大”的ICMP响应到源地址——这样，源主机就“获取”到了不用进行分片就能通过这条路径的最大的最大传输单元了。<br>对于时下大多数使用以太网的局域网来说，最大传输单元的值是1,500字节。但是像PPPoE这样的系统会减小这个数值，通常是1492（=1500-2（PPP）-6（oE））</p>
+<blockquote>
+<p>参考 :<a target="_blank" rel="noopener" href="https://datatracker.ietf.org/doc/html/rfc1191">rfc1191</a></p>
+</blockquote>
+<span id="more"></span>
+<h2 id="透明传输"><a href="#透明传输" class="headerlink" title="透明传输"></a>透明传输</h2><p>透明表示：某一个实际存在的事物看起来好像不存在一样。 </p>
+<p>帧使用首部和尾部进行定界，如果帧的数据部分含有和首部尾部相同的内容，那么帧的开始和结束位置就会被错误的判定。需要在数据部分出现首部尾部相同的内容前面插入转义字符。如果数据部分出现转义字符，那么就在转义字符前面再加个转义字符。在接收端进行处理之后可以还原出原始数据。这个过程透明传输的内容是转义字符，用户察觉不到转义字符的存在。这种方式叫字节填充(byte stuffing)或者字符填充(character stuffing)。<br>PPP协议用在SONET/SDH链路时，使用的是同步传输(一连串的比特连续传输)而不是异步传输(逐个字节的传输)，这种情况下PPP协议采用零比特填充方法来实现透明传输。    </p>
+<h2 id="差错检测"><a href="#差错检测" class="headerlink" title="差错检测"></a>差错检测</h2><p>通信链路通信时难免会出现传输差错，1可能会变成0，0可能会变成1，这就叫比特差错。比特差错是传输差错中的一种。<br>误码率BER(Bit Error Rate)： 传输错误的比特占所传输比特总数的比率叫做误码率BER(Bit Error Rate),误码率和信噪比有很大的关系，如果没法提高信噪比，就可以使得误码率降低。<br>在实际的通信链路中差错是一定会出现的，所以在计算机网络传输数据时必须要对传输过程中的错误进行检测，数据链路层中广泛使用的是循环冗余检测CRC(Cyclic Redundancy Check)的检错技术。<br>FCS(Frame Check Sequence)帧检验序列: 根据数据计算出来的数值插在数据后面<br>循环冗余检测CRC和帧检验序列FCS不是同一概念。CRC是一种检错方法，而FCS是添加在数据后面的冗余码，在检错上可以使用CRC，当然也已选择其他检错技术，不一定要选择CRC。<br>接收端接收到帧后使用CRC对数据计算后得到的检查。数据正常情况下应当与FCS对应起来。<br>可靠传输: 目前在数据链路层上不保证能向网络层提供可靠传输的服务。所谓可靠传输指的是发送端发什么，接收端就接受什么。在实际的传输场景中不仅仅有bit差错一种传输差错，还有可能出现<strong>帧丢失，帧重复和帧失序</strong>的情况。<br>因此，CRC能实现近乎无差错的<strong>比特</strong>传输(为什么说近乎无差错呢，原因是可能存在误码经过CRC计算后得到数值即余数恰巧也为0的情况，但这种情况概率极低)，但不能保证可靠性。</p>
+<p>为了保证数据的可靠性，在CRC检测的基础上加上了帧编号，确认和重传机制。收到正确的帧接收方就要向发送端发送正确。发送端在一定期限内若没有收到接收方的确认就会认为出了差错，因而就进行了重传。直到收到对方的确认为止.但并非所有情况都会在数据链路层做确认和重传机制，目前的技术主要分两种情况  </p>
+<ol>
+<li>通信质量良好的有线传输链路: 当今技术的巨大进步使得在数据链路通信时出现差错的概率大大降低，数据链路层就不再使用确认和重传机制，即不要求数据链路层向上提供可靠传输的服务。如果数据链路层传输数据时出现了差错并且需要改正，那么改正差错的任务就交由上层协议(例如，运输层的TCP协议)来完成。</li>
+<li>对于通信质量较差的无线传输链路: 数据链路层协议使用确认和重传机制，数据链路层向上提供可靠性服务。</li>
+</ol>
+<h1 id="数据链路层使用的信道"><a href="#数据链路层使用的信道" class="headerlink" title="数据链路层使用的信道"></a>数据链路层使用的信道</h1><ol>
+<li>点对点信道 这种信道使用一对一，点对点的通讯方式。</li>
+<li>广播信道 这种信道使用一对多的广播信道方式。广播信道上的连接的计算机有很多，所以需要使用专门的共享信道协议来协调这些主机的数据发送。</li>
+</ol>
+<h2 id="点对点信道的数据链路层"><a href="#点对点信道的数据链路层" class="headerlink" title="点对点信道的数据链路层"></a>点对点信道的数据链路层</h2><h3 id="数据链路和帧"><a href="#数据链路和帧" class="headerlink" title="数据链路和帧"></a>数据链路和帧</h3><p>链路: 从一个结点到相邻结点的物理线路(有线或者无线)，而中间没有其他任何交换结点。</p>
+<p>数据链路: 在一条线路上传输数据时，除了必须要有一条物理线路之外，还要有必要的通信协议来控制这些数据的传输。若把这些实现协议的硬件和软件加到链路上，就构成了数据链路。现在最常用的就是软件适配器(既有硬件，也包括软件)来实现这些协议。</p>
+<p>帧: 数据链路层把网络层交下来的数据构成帧发送到链路上，以及把接收的帧中的数据取出并交给网络层</p>
+<h3 id="点对点的数据链路层通信流程"><a href="#点对点的数据链路层通信流程" class="headerlink" title="点对点的数据链路层通信流程"></a>点对点的数据链路层通信流程</h3><p><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_02.jpg" alt="network_体系结构_数据链路层_02"><br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_01.jpg" alt="network_体系结构_数据链路层_01">   </p>
+<ol>
+<li>节点A的数据链路层把网络层交下来的IP数据报添加首部和尾部封装成帧</li>
+<li>结点A把封装好的帧发送给结点B的数据链路层</li>
+<li>若结点B的数据链路层收到的帧无差错，则从收到的帧中提取出IP数据报上交给上面的网络层，否则丢弃这个帧</li>
+</ol>
+<h3 id="点对点协议PPP-Point-to-point-Protocol"><a href="#点对点协议PPP-Point-to-point-Protocol" class="headerlink" title="点对点协议PPP(Point-to-point Protocol)"></a>点对点协议PPP(Point-to-point Protocol)</h3><p>因特网用户通常要连接到某个ISP才能接入到因特网。PPP协议就是用户计算机和ISP进行通信时所使用的数据链路层协议。<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_04.jpg" alt="network_体系结构_数据链路层_04">   </p>
+<h4 id="ISP"><a href="#ISP" class="headerlink" title="ISP"></a>ISP</h4><p>互联网服务提供商（Internet Service Provider），简称ISP，指的是面向公众提供下列信息服务的经营者：一是接入服务，即帮助用户接入Internet；二是导航服务，即帮助用户在Internet上找到所需要的信息；三是信息服务，即建立数据服务系统，收集、加工、存储信息，定期维护更新，并通过网络向用户提供信息内容服务。</p>
+<p>调制解调器（Modem，俗称“猫”）接入方式。  </p>
+<p>Modem是MOdulatorDEModulator两个英文的缩写合并而成。译成中文就是“调制解调器”，台湾地区也称其为“数据机”或“魔电”。Modem的主要功能就是将数据在数字信号和模拟信号之间的转换，以实现在电话线上的传输。  </p>
+<p>这种接入方式就是通常所说的拨号上网方式，是大家最熟悉和家庭上网应用最多的一种上网方式。主机通过调制解调器和电话线路与ISP（互联网服务提供商）网络服务器的调制解调器相连，实现主机与网络服务器的连接。</p>
+<p>国内ISP主要有: 中国三大基础运营商：中国移动、中国联通、中国电信。还有：北京歌华有线宽带、北京电信通、长城宽带、益家宽带、创威宽带、东南网络、E家宽、方正宽带等等。</p>
+<h4 id="PPP协议应当满足的需求"><a href="#PPP协议应当满足的需求" class="headerlink" title="PPP协议应当满足的需求"></a>PPP协议应当满足的需求</h4><p>IETF认为在设计PPP协议时必须考虑以下多方面的需求[RFC 1547]  </p>
+<ol>
+<li>简单<br>对数据链路层的帧不需要纠错，不需要序号，也不需要流量控制。IETF把简单作为PPP协议的首要需求。简单的设计使得在实现时不容易出错，从而使得不同厂商在协议的不同实现上的互操作性提高了。</li>
+<li>封装成帧<br>PPP协议必须规定特殊的字符作为帧定界符(即标志一个帧的开始和结束字符)，以便于使接收端从收到的比特流中能准确的找出帧的开始和结束位置。</li>
+<li>透明性<br>PPP协议必须保证数据传输的透明性。这就是说，如果数据中碰巧出现了帧定界符一样的比特组合时，就要采取有效的措施来解决这个问题。</li>
+<li>多种网络层协议<br>PPP协议需要能够在同一条物理链路上同时支持多种网络层协议(如IP和IPX等)的运行。当点对点链路所连接的是局域网或者路由器时，PPP协议必须同时支持在链路所连接的局域网或者路由器上运行的各种网络层协议。</li>
+<li>多种类型链路<br>除了要支持多种网络层协议之外，PPP协议还要支持多种类型的链路。如电的或者光的，串行或并行的，同步或者异步的，低速的或者高速的，交换的或者非交换的点对点链路。  </li>
+<li>差错检测(ERROR DETECTION)<br>PPP协议必须需能够对接收端收到的帧进行检测，并立即丢弃有差错的帧。若在数据链路层不进行差错检测，那么已出现差错的无用帧就会继续在网络中往前发，这样就白白浪费了许多网络资源。</li>
+<li>检测连接状态<br>PPP协议必须有一种机制能够及时自动检测出链路是否正常处于正常工作状态。当出现了故障的链路隔了一段时间后恢复了，那么就特别需要这种及时检测的功能。</li>
+<li>最大传输单元<br>PPP协议必须对每一种类型的点对点链路设置最大传输单元MTU的标准默认值。值得注意的是MTU是数据链路层帧可以载荷的<strong>数据部分</strong>的最大长度，而不是帧的总长度。</li>
+<li>网络层地址协商<br>PPP协议必须提供一种机制使得通信的两个网络层的实体能够通过协商知道或者能够配置彼此的网络层地址。</li>
+<li>数据压缩协商<br>PPP协议需要提供一种方法来协商使用数据压缩算法。但PPP协议不要求将数据压缩算法标准化。</li>
+</ol>
+<h3 id="PPP协议中的透明传输"><a href="#PPP协议中的透明传输" class="headerlink" title="PPP协议中的透明传输"></a>PPP协议中的透明传输</h3><ol>
+<li>使用异步传输时(逐个字节的发送)，使用字节填充    </li>
+<li>使用同步传输时(一连串的比特连续传输)，使用零比特传输<br>零比特填充的做法是，在信息字段中只要发现有5个连续的1后面就插一个0，经过这种处理之后，就可以保证在信息字段不会出现6个1。接收端在收到一个帧时，先找到标志字段F以确定一个帧的边界，接着再用硬件对比特流进行扫描。每发现5个1时，就把这5个连续的1后的一个0删除，以还原成原来的信息比特流。这样就实现了透明传输。</li>
+</ol>
+<h3 id="PPPoE-PPP-over-Ethernet-RFC2516"><a href="#PPPoE-PPP-over-Ethernet-RFC2516" class="headerlink" title="PPPoE(PPP over Ethernet).RFC2516"></a>PPPoE(PPP over Ethernet).RFC2516</h3><p>以太网的帧格式标准中，在地址字段部分没有用用户名字段，也没有让用户键入密码来鉴别用户身份的过程如果运营商要利用以太网接入因特网那就必须要解决这个问题。<br>于是就提出了将PPP协议中的PPP帧再封装到以太网中来传输。这就是1999年公布的PPPoE(PPP over Ethernet)，意思是在以太网上运行PPP，像现在的光纤宽带都要使用PPPoE的方式进行接入。</p>
+<h4 id="RFC"><a href="#RFC" class="headerlink" title="RFC"></a>RFC</h4><p>请求意见稿（英语：Request for Comments，缩写：RFC），又翻译作意见征求，意见请求，请求评论[1]是由互联网工程任务组（IETF）发布的一系列备忘录。文件收集了有关互联网相关信息，以及UNIX和互联网社区的软件文件，以编号排定。目前RFC文件是由互联网协会（ISOC）赞助发行。</p>
+<p>RFC始于1969年，由当时就读加州大学洛杉矶分校（UCLA）的斯蒂芬·克罗克（Stephen D. Crocker）用来记录有关ARPANET开发的非正式文档，他是第一份RFC文档的撰写者。最终演变为用来记录互联网规范、协议、过程等的标准文件。基本的互联网通信协议都有在RFC文件内详细说明。RFC文件还额外加入许多的论题在标准内，例如对于互联网新开发的协议及发展中所有的记录。</p>
+<blockquote>
+<p>参考:<br>    <a target="_blank" rel="noopener" href="https://zh.wikipedia.org/wiki/RFC">RFC-维基百科</a></p>
+</blockquote>
+<h2 id="广播信道"><a href="#广播信道" class="headerlink" title="广播信道"></a>广播信道</h2><p>广播信道就是可以进行一对多的通信，局域网使用的就是广播信道。  </p>
+<h3 id="局域网的数据链路层"><a href="#局域网的数据链路层" class="headerlink" title="局域网的数据链路层"></a>局域网的数据链路层</h3><p>局域网主要的特点：网络为一个单位所有，且地理范围和站点数目均有限。<br>局域网优点：  </p>
+<ol>
+<li>具有广播功能，从一个站点可以很方便的访问全网。局域网的主机可共享连接在局域网的各种硬件和软件资源。  </li>
+<li>便于系统的扩展和逐渐的演变，各设备的位置可以灵活调整和改变。    </li>
+<li>提高了系统的可靠性，可用性和生存性。  </li>
+</ol>
+<h3 id="按网络拓扑分类的局域网"><a href="#按网络拓扑分类的局域网" class="headerlink" title="按网络拓扑分类的局域网"></a>按网络拓扑分类的局域网</h3><ol>
+<li>星形网<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_05.jpg" alt="network_体系结构_数据链路层_05">   </li>
+<li>环形网<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_06.jpg" alt="network_体系结构_数据链路层_06">   </li>
+<li>总线网<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_07.jpg" alt="network_体系结构_数据链路层_07">   </li>
+</ol>
+<h3 id="共享通信媒体资源"><a href="#共享通信媒体资源" class="headerlink" title="共享通信媒体资源"></a>共享通信媒体资源</h3><h4 id="静态划分信道"><a href="#静态划分信道" class="headerlink" title="静态划分信道"></a>静态划分信道</h4><p>使用频分复用，时分复用，波分复用的方式进行信道划分，用户只要分配到了信道就不会与其他用户发生冲突。   </p>
+<h4 id="动态媒体接入控制-多点接入-multiple-access"><a href="#动态媒体接入控制-多点接入-multiple-access" class="headerlink" title="动态媒体接入控制(多点接入,multiple access)"></a>动态媒体接入控制(多点接入,multiple access)</h4><p>其特点为信道并非在用户通信时分配给用户。这里又分为两类，随机接入和受控接入，其中受控接入目前在局域网中使用得比较少。  </p>
+<ol>
+<li>随机接入<br>随机接入的特点是所有用户可随机地发送信息。但恰巧有两个或者更多的用户在同一时刻发送了信息，那么在共享媒体上就产生了碰撞即发生了冲突，因此就需要解决碰撞的网络协议。  </li>
+<li>受控接入<br>受控接入的特点就是用户不能随机的发送消息，而必须服从一定的控制。这类典型的代表为分散控制的令牌环局域网和集中控制的多点线路探询或称为轮询。</li>
+</ol>
+<h3 id="局域网下的LLC和MAC"><a href="#局域网下的LLC和MAC" class="headerlink" title="局域网下的LLC和MAC"></a>局域网下的LLC和MAC</h3><p>LLC: Logical Link Control<br>MAC: Medium Access Control<br>IEEE 802 委员会把局域网的数据链路层拆分为两个子层，与接入到传输媒体有关的内容全部放在MAC子层，而LLC与传输媒体无关，不管采用何种传输媒体，MAC对于LLC来说都是透明的。<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_08.jpg" alt="network_体系结构_数据链路层_08"><br>由于因特网发展得很快，所以TCP/IP体系经常使用得局域网只剩下DIX Ethernet V2而不是IEEE 802.3标准中的局域网，因此IEEE 802委员会制定得逻辑链路子层LLC得作用已经消失。很多厂商生产的适配器上仅装有MAC协议而没有LLC协议。故以下内容仅讲述MAC</p>
+<h4 id="LLC-与-MAC"><a href="#LLC-与-MAC" class="headerlink" title="LLC 与 MAC"></a>LLC 与 MAC</h4><p>数据链路层的两个子层，即LLC（逻辑链路控制，Logical Link Control）和MAC（介质访问控制，Media Access Control）。<br>LLC负责与上层网络层交互，MAC负责和物理层交互.如图所示:<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_01.jpg" alt="network_体系结构_01"></p>
+<blockquote>
+<p>参见: <a target="_blank" rel="noopener" href="http://computernetworkingsimplified.in/data-link-layer/components-data-link-layer-llc-mac/">Functions of LLC and MAC sub-layers of Data Link Layer</a><br>While LLC is responsible for handling multiple Layer3 protocols (multiplexing/de-multiplexing) and link services like reliability and flow control, the MAC is responsible for framing and media access control for broadcast media. The functional overview of LLC and MAC sub-layers are given in the diagram below :<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_02.jpg" alt="network_体系结构_02">  </p>
+</blockquote>
+<h4 id="以太网的MAC层"><a href="#以太网的MAC层" class="headerlink" title="以太网的MAC层"></a>以太网的MAC层</h4><p>在局域网中，硬件地址又称为物理地址或者MAC地址(因为这种地址用在MAC帧中)。<br>IEEE规定了一种48位的全球地址，是指局域网的每一台计算机中固化在适配器的ROM中的地址。   因此，假定连接在局域网中的一台计算机的适配器坏了而我们更换了一个新的适配器，那么这台计算机的MAC地址就变了。</p>
+<p>IEEE的注册管理机构RA(Registration Authority)是局域网全球地址的法定管理机构[W-IEEERA]，它负责分配地址字段的6个字节中的前3个字节即高位24位。世界上凡要生产局域网适配器的厂家都必须要向IEEE购买由这3个字节构成的这个号，即地址块，这个号的正式名称是组织唯一标识符OUI(Organizationally Unique Identifier)。地址中的后3个字节则由厂家自行指派，称为扩展标识符，只要确保生产出来的地址不重复即可。   </p>
+<p>在生产适配器时，这种6个字节的MAC地址就已经被固化在适配器的ROM中了。MAC地址叫做硬件地址(Hardware Address)或者物理地址。可见”MAC”实际上就是适配器地址或者适配器标识符EUI-48.</p>
+<h5 id="单播和广播和多播"><a href="#单播和广播和多播" class="headerlink" title="单播和广播和多播"></a>单播和广播和多播</h5><p>IEEE规定地址字段的第一个字节的低位为I/G位。I/G表示Individual/Group。<br>当I/G位为0时，地址字段表示一个单个站地址。<br>当I/G位为1时，地址字段表示组地址，用来进行多播(组播)，当地址全为1时则为广播。  </p>
+<blockquote>
+<p>单播帧(一对一): 收到的帧的MAC地址与本站的硬件地址相同。<br>广播帧(一对全体): 发送给本局域网上所有站点的帧<br>多播帧(一对多): 发送给本局域网上部分站点的帧</p>
+</blockquote>
+<p>以太网适配器还可以配置一种<strong>混杂模式</strong>的工作方式，使用这种工作方式的适配器会把听到的帧全部收下来，而不管这些帧发往哪个站，这样做实际上是窃听了其他站点的通信但不中断其他站点的通信。</p>
+<p>有一种网络工具叫做嗅探器就使用了混杂模式的适配器。</p>
+<h3 id="适配器"><a href="#适配器" class="headerlink" title="适配器"></a>适配器</h3><p>计算机与外界局域网得连接是通过通信适配器做到的。适配器本来是主机箱内插入的网络接口板(个人计算机存储卡接口的适配器)。这种接口板又称为网络接口卡NIC(NETWORK INTERFACE CARD)或简称为网卡。现在计算机主板上都直接嵌入了这种适配器，不再使用单独的网卡。在适配器上面装有处理器和存储器(RAM&amp;ROM)。  </p>
+<ol>
+<li>适配器和局域网之间的通信是通过电缆或者双绞线以串行传输的方式进行的。</li>
+<li>适配器和计算机之间的通信则是通过计算机主板上的IO总线以并行传输方式进行的。<br>因此适配器的重要功能之一就是进行数据串行传输和并行传输的转换。</li>
+</ol>
+<p>适配器接收和发送帧时不使用计算机的CPU。这时候CPU可以处理其他任务。当适配器接收到有差错的帧时直接丢弃不需要通知计算机。<br>当适配器接收到正确的帧时就中断通知该计算机并交付协议栈中的网络层。当计算机要发送IP数据报时，就由协议栈把IP数据报向下交给适配器。<br>计算机的硬件地址存在于适配器的ROM中，而计算机的软件地址-IP地址存在于计算机的存储器中。<br><img src="/images/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82_09.jpg" alt="network_体系结构_数据链路层_09">      </p>
+<h3 id="ROM和RAM"><a href="#ROM和RAM" class="headerlink" title="ROM和RAM"></a>ROM和RAM</h3><p>RAM- Random Access Memory（代表随机存取存储器）和ROM- Read-Only Memory（代表只读存储器）都存在于计算机中。 </p>
+<p>RAM是易失性内存，这意味着在重新启动或关闭计算机时，会暂时删除模块中临时存储的信息。由于信息是电存储在晶体管上的，因此当没有电流时，数据就会消失。每次您请求文件或信息时，都会从计算机的存储磁盘或Internet中检索文件或信息。数据存储在RAM中，因此，每当您从一个程序或页面切换到另一个程序或页面时，该信息即刻可用。关闭计算机后，内存将被清除，直到再次开始该过程为止。用户可以轻松更改，升级或扩展易失性内存。</p>
+<p>ROM是非易失性存储器，这意味着信息永久存储在芯片上。存储器不依赖于电流来保存数据，而是使用二进制代码将数据写入各个单元。非易失性内存用于计算机的不变部件，例如软件的初始启动部分或使打印机运行的固件说明。关闭计算机不会对ROM产生任何影响。用户不能更改非易失性存储器。</p>
+<h3 id="CSMA-CD-协议"><a href="#CSMA-CD-协议" class="headerlink" title="CSMA/CD 协议"></a>CSMA/CD 协议</h3><p>总线上在同一时间上只能允许一台计算机发送数据，否则各个计算机之间就会互相干扰，使得所发送的数据被破坏。因此采用了载波监听多点接入/碰撞检测(Carrier Sense Multiple Access With Collision Detection)去协调.<br>协议解释如下: </p>
+<ol>
+<li>多点接入: 说明这是总线型网络，许多计算机以多点接入的方式连接在一根总线上.协议的实质是载波监听和碰撞检测. </li>
+</ol>
+<ol start="2">
+<li>载波监听: 用电子技术检测总线上是否有其他计算机也在发送.其实总线上并没有什么载波，这里只是借用了载波这个名词而已。因此<strong>载波监听就是检测信道</strong>.这是一个很重要的措施。不管在发送前还是发送中，每个站都必须不停的检测信道。  </li>
+</ol>
+<blockquote>
+<p>在发送前检测信道，是为了获取发送权.如果检测出已经有其他站在发送，则自己暂时不允许发送数据，必须等到信道变为空闲之后再发送。</p>
+<p>在发送中检测信道，则是为了及时发现有没有其他站的发送和本站发送的碰撞，这就称之为碰撞检测。  </p>
+</blockquote>
+<ol start="3">
+<li>碰撞检测: 碰撞检测也就是边发送边监听，即适配器边发送数据边检测信道上的信号电压的变化情况，以便判断自己在发送数据时，其他站是否也在发送数据。当几个站同时在总线上发送数据时，总线上的信号电压幅度将会变大(互相叠加)当适配器检测到的信号电压变化大于一定的门限时，就认为总线上至少有两个站同时在发送数据，表明产生了碰撞。其适配器就要立即停止发送免得继续进行无效的发送，白白浪费网络资源，然后等待一段随机时间再重新发送。  </li>
+</ol>
+<p>显然，在使用CSMA/CD协议时，一个站不可能同时进行发送和接收[计算机网络.谢希仁.第六版.CSAM/CD协议],</p>
+<h4 id="CSMA-CD协议的工作流程"><a href="#CSMA-CD协议的工作流程" class="headerlink" title="CSMA/CD协议的工作流程"></a>CSMA/CD协议的工作流程</h4><ol>
+<li>准备发送: 适配器从网络层获得一个分组，加上以太网的首部和尾部，组成以太网帧，放入适配器的缓存中。但在发送之前，必须先检测信道。</li>
+<li>检测信道: 若检测到信道忙，则应该不停的检测，一直等待信道转化为空闲，若检测到信道空闲，并在96比特时间内信道保持空闲(保证帧间最小间隔)，就发送这个帧。</li>
+<li>碰撞检测: 在发送过程中仍不停的检测信道，即网络适配器要边发送边监听.这里只有两种可能性。<br>(1) 发送成功: 在征用期内一直没有检测到碰撞。这个帧肯定能发送成功。发送成功之后什么都不做，然后回到步骤1.<br>(2) 发送失败: 在争用期内检测到碰撞。这时应当立即停止发送数据，并按规定发送人为干扰信号.适配器接着就执行退避算法，等待r倍512比特时间后，返回步骤2 ，继续检测信道。若重传16次仍不能成功，则停止重传并向上报错.</li>
+</ol>
+<h3 id="集线器"><a href="#集线器" class="headerlink" title="集线器"></a>集线器</h3><p>星形拓扑的以太网在星形的中心增加了一种可靠性非常高的设备叫集线器(hub).</p>
+<h4 id="特点"><a href="#特点" class="headerlink" title="特点"></a>特点</h4><ol>
+<li>从表面上看，使用集线器的局域网在物理上看是一个星形网，但由于集线器是使用电子器件来模拟实际电缆线的工作，因此整个系统看起来跟传统的以太网一样运行.使用集线器的以太网在逻辑上仍然是一个总线网.各站共享逻辑上的总线，使用的还是CSMA/CD协议(更具体一些应当是各站中的适配器执行CSMA/CD协议).在网络中，同一时刻只允许一个站发送数据。因此这种以太网又称作星型总线或盒中总线。</li>
+<li>一个集线器有许多接口，例如8至16个，每个通过RJ-45插头用两对双绞线与一个工作站上的适配器相连，因此一个集线器就像是一个多接口的转发器。</li>
+<li>集线器工作在物理层，它的接口仅仅简单的转发比特-收到1就转发1，收到0就转发0，不进行碰撞检测，若两个接口同时有信号输入，那么所有的接口将收不到正确的帧。</li>
+<li>集线器采用了专门的芯片，进行自适应串音回波抵消。这样可以使得接口转发出去的较强信号不致对该接口的较弱信号产生干扰(这种干扰即近端串音)。</li>
+</ol>
+<h1 id="TIP"><a href="#TIP" class="headerlink" title="TIP"></a>TIP</h1><ol>
+<li>在网络层中的网络层协议数据单元就是IP数据报(简称数据报，分组和包)</li>
+</ol>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2021/05/13/network/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82/" title="计算机网络_体系结构_数据链路层">https://nytech3.github.io/2021/05/13/network/network_体系结构_数据链路层/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C/" rel="tag"># 计算机网络</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/05/13/network/network_%E4%BD%93%E7%B3%BB%E7%BB%93%E6%9E%84_%E7%BD%91%E7%BB%9C%E5%B1%82/" rel="prev" title="计算机网络_体系结构_网络层">
+      <i class="fa fa-chevron-left"></i> 计算机网络_体系结构_网络层
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/05/21/network/HTTP_HTTP%E6%8A%A5%E6%96%87/" rel="next" title="HTTP_HTTP报文">
+      HTTP_HTTP报文 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82%E7%9A%84%E4%B8%89%E4%B8%AA%E5%9F%BA%E6%9C%AC%E9%97%AE%E9%A2%98"><span class="nav-number">1.</span> <span class="nav-text">数据链路层的三个基本问题</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B0%81%E8%A3%85%E6%88%90%E5%B8%A7"><span class="nav-number">1.1.</span> <span class="nav-text">封装成帧</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#MTU-Maximum-Transfer-Unit"><span class="nav-number">1.1.1.</span> <span class="nav-text">MTU(Maximum Transfer Unit)</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%80%8F%E6%98%8E%E4%BC%A0%E8%BE%93"><span class="nav-number">1.2.</span> <span class="nav-text">透明传输</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B7%AE%E9%94%99%E6%A3%80%E6%B5%8B"><span class="nav-number">1.3.</span> <span class="nav-text">差错检测</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82%E4%BD%BF%E7%94%A8%E7%9A%84%E4%BF%A1%E9%81%93"><span class="nav-number">2.</span> <span class="nav-text">数据链路层使用的信道</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E7%82%B9%E5%AF%B9%E7%82%B9%E4%BF%A1%E9%81%93%E7%9A%84%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82"><span class="nav-number">2.1.</span> <span class="nav-text">点对点信道的数据链路层</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%92%8C%E5%B8%A7"><span class="nav-number">2.1.1.</span> <span class="nav-text">数据链路和帧</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%82%B9%E5%AF%B9%E7%82%B9%E7%9A%84%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82%E9%80%9A%E4%BF%A1%E6%B5%81%E7%A8%8B"><span class="nav-number">2.1.2.</span> <span class="nav-text">点对点的数据链路层通信流程</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%82%B9%E5%AF%B9%E7%82%B9%E5%8D%8F%E8%AE%AEPPP-Point-to-point-Protocol"><span class="nav-number">2.1.3.</span> <span class="nav-text">点对点协议PPP(Point-to-point Protocol)</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#ISP"><span class="nav-number">2.1.3.1.</span> <span class="nav-text">ISP</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#PPP%E5%8D%8F%E8%AE%AE%E5%BA%94%E5%BD%93%E6%BB%A1%E8%B6%B3%E7%9A%84%E9%9C%80%E6%B1%82"><span class="nav-number">2.1.3.2.</span> <span class="nav-text">PPP协议应当满足的需求</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#PPP%E5%8D%8F%E8%AE%AE%E4%B8%AD%E7%9A%84%E9%80%8F%E6%98%8E%E4%BC%A0%E8%BE%93"><span class="nav-number">2.1.4.</span> <span class="nav-text">PPP协议中的透明传输</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#PPPoE-PPP-over-Ethernet-RFC2516"><span class="nav-number">2.1.5.</span> <span class="nav-text">PPPoE(PPP over Ethernet).RFC2516</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#RFC"><span class="nav-number">2.1.5.1.</span> <span class="nav-text">RFC</span></a></li></ol></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%B9%BF%E6%92%AD%E4%BF%A1%E9%81%93"><span class="nav-number">2.2.</span> <span class="nav-text">广播信道</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B1%80%E5%9F%9F%E7%BD%91%E7%9A%84%E6%95%B0%E6%8D%AE%E9%93%BE%E8%B7%AF%E5%B1%82"><span class="nav-number">2.2.1.</span> <span class="nav-text">局域网的数据链路层</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E6%8C%89%E7%BD%91%E7%BB%9C%E6%8B%93%E6%89%91%E5%88%86%E7%B1%BB%E7%9A%84%E5%B1%80%E5%9F%9F%E7%BD%91"><span class="nav-number">2.2.2.</span> <span class="nav-text">按网络拓扑分类的局域网</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%85%B1%E4%BA%AB%E9%80%9A%E4%BF%A1%E5%AA%92%E4%BD%93%E8%B5%84%E6%BA%90"><span class="nav-number">2.2.3.</span> <span class="nav-text">共享通信媒体资源</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E9%9D%99%E6%80%81%E5%88%92%E5%88%86%E4%BF%A1%E9%81%93"><span class="nav-number">2.2.3.1.</span> <span class="nav-text">静态划分信道</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E5%8A%A8%E6%80%81%E5%AA%92%E4%BD%93%E6%8E%A5%E5%85%A5%E6%8E%A7%E5%88%B6-%E5%A4%9A%E7%82%B9%E6%8E%A5%E5%85%A5-multiple-access"><span class="nav-number">2.2.3.2.</span> <span class="nav-text">动态媒体接入控制(多点接入,multiple access)</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%B1%80%E5%9F%9F%E7%BD%91%E4%B8%8B%E7%9A%84LLC%E5%92%8CMAC"><span class="nav-number">2.2.4.</span> <span class="nav-text">局域网下的LLC和MAC</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#LLC-%E4%B8%8E-MAC"><span class="nav-number">2.2.4.1.</span> <span class="nav-text">LLC 与 MAC</span></a></li><li class="nav-item nav-level-4"><a class="nav-link" href="#%E4%BB%A5%E5%A4%AA%E7%BD%91%E7%9A%84MAC%E5%B1%82"><span class="nav-number">2.2.4.2.</span> <span class="nav-text">以太网的MAC层</span></a><ol class="nav-child"><li class="nav-item nav-level-5"><a class="nav-link" href="#%E5%8D%95%E6%92%AD%E5%92%8C%E5%B9%BF%E6%92%AD%E5%92%8C%E5%A4%9A%E6%92%AD"><span class="nav-number">2.2.4.2.1.</span> <span class="nav-text">单播和广播和多播</span></a></li></ol></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%80%82%E9%85%8D%E5%99%A8"><span class="nav-number">2.2.5.</span> <span class="nav-text">适配器</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#ROM%E5%92%8CRAM"><span class="nav-number">2.2.6.</span> <span class="nav-text">ROM和RAM</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#CSMA-CD-%E5%8D%8F%E8%AE%AE"><span class="nav-number">2.2.7.</span> <span class="nav-text">CSMA&#x2F;CD 协议</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#CSMA-CD%E5%8D%8F%E8%AE%AE%E7%9A%84%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B"><span class="nav-number">2.2.7.1.</span> <span class="nav-text">CSMA&#x2F;CD协议的工作流程</span></a></li></ol></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E9%9B%86%E7%BA%BF%E5%99%A8"><span class="nav-number">2.2.8.</span> <span class="nav-text">集线器</span></a><ol class="nav-child"><li class="nav-item nav-level-4"><a class="nav-link" href="#%E7%89%B9%E7%82%B9"><span class="nav-number">2.2.8.1.</span> <span class="nav-text">特点</span></a></li></ol></li></ol></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#TIP"><span class="nav-number">3.</span> <span class="nav-text">TIP</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

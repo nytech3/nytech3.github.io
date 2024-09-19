@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="工作流程 查找key是否存在于客户端选择的db中，如果存在则检查对应的类型是否为set，不为set的话直接返回，为set类型的话检查新增数据之后是否需要进行编码转化，需要的话则进行转化，如果不存在则将对应的key和新创建的set对象值加入db中 在类型转化时，会判断是否超过对应编码设置的最大大小,只有超过阈值才会发生转化，转化时遍历原来的所有数据，加入新的dict对象中a. 当原set编码类型为">
+<meta property="og:type" content="article">
+<meta property="og:title" content="源码阅读(六)-Redis中的SADD命令">
+<meta property="og:url" content="https://nytech3.github.io/2023/09/23/redis/redis_sadd/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="工作流程 查找key是否存在于客户端选择的db中，如果存在则检查对应的类型是否为set，不为set的话直接返回，为set类型的话检查新增数据之后是否需要进行编码转化，需要的话则进行转化，如果不存在则将对应的key和新创建的set对象值加入db中 在类型转化时，会判断是否超过对应编码设置的最大大小,只有超过阈值才会发生转化，转化时遍历原来的所有数据，加入新的dict对象中a. 当原set编码类型为">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-09-23T10:00:00.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:57.000Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="c">
+<meta property="article:tag" content="redis">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/2023/09/23/redis/redis_sadd/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>源码阅读(六)-Redis中的SADD命令 | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2023/09/23/redis/redis_sadd/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          源码阅读(六)-Redis中的SADD命令
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-09-23 18:00:00" itemprop="dateCreated datePublished" datetime="2023-09-23T18:00:00+08:00">2023-09-23</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/technology/" itemprop="url" rel="index"><span itemprop="name">technology</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2023/09/23/redis/redis_sadd/" class="post-meta-item leancloud_visitors" data-flag-title="源码阅读(六)-Redis中的SADD命令" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<h1 id="工作流程"><a href="#工作流程" class="headerlink" title="工作流程"></a>工作流程</h1><ol>
+<li>查找key是否存在于客户端选择的db中，如果存在则检查对应的类型是否为set，不为set的话直接返回，<br>为set类型的话检查新增数据之后是否需要进行编码转化，需要的话则进行转化，如果不存在则将对应的key<br>和新创建的set对象值加入db中</li>
+<li>在类型转化时，会判断是否超过对应编码设置的最大大小,只有超过阈值才会发生转化，转化时遍历原来的所有数据，加入新的dict对象中<br>a. 当原set编码类型为LISTPACK，并且大小超过服务器设置listpack的最大大小限制时会发生转化，转化的目标编码为OBJ_ENCODING_HT<br>b. 当原set编码类型为INTSET，并且大小超过服务器设置intset的最大大小限制时发生转化，转化的目标编码为OBJ_ENCODING_HT</li>
+<li>遍历所有要新增的值，将其加入set对象中，新增成功则将记录下来(added字段+1，用于返回给客户端)，如果之前数据已存在则不+1。<br>a. 如果set为OBJ_ENCODING_HT编码，则通过hash计算找到对应的bucket，若数据不存在于对应的bucket中，则将值置入其中<br>b. 如果set为OBJ_ENCODING_LISTPACK编码，则通过遍历列表查找对象，不存在则置入队列尾部<br>c. 如果set为OBJ_ENCODING_INTSET编码，则通过二分查找找到对应的值，找不到则找到对应的插入点进行插入，如果插入值不为数值类型，则检查是否超过listpack大小阈值，不超过的话转化成LISTPACK，超过的话转化成HT，再进行插入</li>
+<li>如果有新增数据则进行set的sadd事件通知，并将server.dirty加上added，表示有added个数据发生了变更。<span id="more"></span>
+<h1 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h1><h2 id="SADD-json"><a href="#SADD-json" class="headerlink" title="SADD json"></a>SADD json</h2>添加一个或者多个对象到set中，如果键不存在则创建键。如果只新增一个对象，其时间复杂度为O(1),如果新增多个对象则时间复杂度为O(n),从2.4.0版本开始<code>SADD</code>命令支持添加多个值，命令结果返回新增的值。<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;SADD&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;summary&quot;</span>: <span class="string">&quot;Adds one or more members to a set. Creates the key if it doesn&#x27;t exist.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;complexity&quot;</span>: <span class="string">&quot;O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;group&quot;</span>: <span class="string">&quot;set&quot;</span>,</span><br><span class="line">        <span class="string">&quot;since&quot;</span>: <span class="string">&quot;1.0.0&quot;</span>,</span><br><span class="line">        <span class="string">&quot;arity&quot;</span>: <span class="number">-3</span>,</span><br><span class="line">        <span class="string">&quot;function&quot;</span>: <span class="string">&quot;saddCommand&quot;</span>,</span><br><span class="line">        <span class="string">&quot;history&quot;</span>: [</span><br><span class="line">            [</span><br><span class="line">                <span class="string">&quot;2.4.0&quot;</span>,</span><br><span class="line">                <span class="string">&quot;Accepts multiple `member` arguments.&quot;</span></span><br><span class="line">            ]</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;command_flags&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;WRITE&quot;</span>,</span><br><span class="line">            <span class="string">&quot;DENYOOM&quot;</span>,</span><br><span class="line">            <span class="string">&quot;FAST&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;acl_categories&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;SET&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;key_specs&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;flags&quot;</span>: [</span><br><span class="line">                    <span class="string">&quot;RW&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;INSERT&quot;</span></span><br><span class="line">                ],</span><br><span class="line">                <span class="string">&quot;begin_search&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;index&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;pos&quot;</span>: <span class="number">1</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;,</span><br><span class="line">                <span class="string">&quot;find_keys&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;range&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;lastkey&quot;</span>: <span class="number">0</span>,</span><br><span class="line">                        <span class="string">&quot;step&quot;</span>: <span class="number">1</span>,</span><br><span class="line">                        <span class="string">&quot;limit&quot;</span>: <span class="number">0</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;reply_schema&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;description&quot;</span>: <span class="string">&quot;Number of elements that were added to the set, not including all the elements already present in the set.&quot;</span>,</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;integer&quot;</span></span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;arguments&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;key&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;key&quot;</span>,</span><br><span class="line">                <span class="string">&quot;key_spec_index&quot;</span>: <span class="number">0</span></span><br><span class="line">            &#125;,</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;member&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>,</span><br><span class="line">                <span class="string">&quot;multiple&quot;</span>: <span class="literal">true</span></span><br><span class="line">            &#125;</span><br><span class="line">        ]</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br></pre></td></tr></table></figure></li>
+</ol>
+<h2 id="命令执行样例"><a href="#命令执行样例" class="headerlink" title="命令执行样例"></a>命令执行样例</h2><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="number">127.0</span><span class="number">.0</span><span class="number">.1</span>:<span class="number">6379</span>&gt; sadd aaa aa</span><br><span class="line">(integer) <span class="number">1</span></span><br><span class="line"><span class="number">127.0</span><span class="number">.0</span><span class="number">.1</span>:<span class="number">6379</span>&gt; sadd aaa aa</span><br><span class="line">(integer) <span class="number">0</span></span><br><span class="line"><span class="number">127.0</span><span class="number">.0</span><span class="number">.1</span>:<span class="number">6379</span>&gt; sadd aaa aa</span><br><span class="line">(integer) <span class="number">0</span></span><br><span class="line"><span class="number">127.0</span><span class="number">.0</span><span class="number">.1</span>:<span class="number">6379</span>&gt; sadd aaa aa aa</span><br><span class="line">(integer) <span class="number">0</span></span><br><span class="line"><span class="number">127.0</span><span class="number">.0</span><span class="number">.1</span>:<span class="number">6379</span>&gt; sadd aaa aa aaa</span><br><span class="line">(integer) <span class="number">1</span></span><br></pre></td></tr></table></figure>
+
+<h2 id="代码分析"><a href="#代码分析" class="headerlink" title="代码分析"></a>代码分析</h2><p>-&gt; saddCommand :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// saddCommand实现了SADD命令，将一批值加入集合中</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">saddCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    robj *<span class="built_in">set</span>;</span><br><span class="line">    <span class="keyword">int</span> j, added = <span class="number">0</span>;</span><br><span class="line">    <span class="comment">// 查找key对应的值是否存在</span></span><br><span class="line">    <span class="built_in">set</span> = lookupKeyWrite(c-&gt;db,c-&gt;argv[<span class="number">1</span>]);</span><br><span class="line">    <span class="comment">// 检查对应的值是否为SET类型</span></span><br><span class="line">    <span class="keyword">if</span> (checkType(c,<span class="built_in">set</span>,OBJ_SET)) <span class="keyword">return</span>;</span><br><span class="line">    <span class="comment">// 如果集合为NULL</span></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">set</span> == <span class="literal">NULL</span>) &#123;</span><br><span class="line">        <span class="comment">// 创建一个SET对象</span></span><br><span class="line">        <span class="built_in">set</span> = setTypeCreate(c-&gt;argv[<span class="number">2</span>]-&gt;ptr, c-&gt;argc - <span class="number">2</span>);</span><br><span class="line">        <span class="comment">// 将SET对象和key组合成一个entry，加入客户端选择的DB对应的字典中</span></span><br><span class="line">        dbAdd(c-&gt;db,c-&gt;argv[<span class="number">1</span>],<span class="built_in">set</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// 如果集合已存在，尝试将其转换为适合存储大量元素的编码格式(OBJ_ENCODING_HT)</span></span><br><span class="line">        setTypeMaybeConvert(<span class="built_in">set</span>, c-&gt;argc - <span class="number">2</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">for</span> (j = <span class="number">2</span>; j &lt; c-&gt;argc; j++) &#123;</span><br><span class="line">        <span class="comment">// 将值加入set中，不同的格式加入的方式不同</span></span><br><span class="line">        <span class="keyword">if</span> (setTypeAdd(<span class="built_in">set</span>,c-&gt;argv[j]-&gt;ptr)) added++;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">if</span> (added) &#123;</span><br><span class="line">        signalModifiedKey(c,c-&gt;db,c-&gt;argv[<span class="number">1</span>]);</span><br><span class="line">        notifyKeyspaceEvent(NOTIFY_SET,<span class="string">&quot;sadd&quot;</span>,c-&gt;argv[<span class="number">1</span>],c-&gt;db-&gt;id);</span><br><span class="line">    &#125;</span><br><span class="line">    server.dirty += added;</span><br><span class="line">    addReplyLongLong(c,added);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; saddCommand -&gt; setTypeMaybeConvert:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Check if the existing set should be converted to another encoding based off the</span></span><br><span class="line"><span class="comment"> * the size hint. */</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">setTypeMaybeConvert</span><span class="params">(robj *<span class="built_in">set</span>, <span class="keyword">size_t</span> size_hint)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 如果编码类型为LISTPACK或者INTSET并且超过了各自的最大大小限制则转化成HASHTABLE类型</span></span><br><span class="line">    <span class="keyword">if</span> ((<span class="built_in">set</span>-&gt;encoding == OBJ_ENCODING_LISTPACK &amp;&amp; size_hint &gt; server.set_max_listpack_entries)</span><br><span class="line">        || (<span class="built_in">set</span>-&gt;encoding == OBJ_ENCODING_INTSET &amp;&amp; size_hint &gt; server.set_max_intset_entries))</span><br><span class="line">    &#123;</span><br><span class="line">        setTypeConvertAndExpand(<span class="built_in">set</span>, OBJ_ENCODING_HT, size_hint, <span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; saddCommand -&gt; setTypeMaybeConvert -&gt; setTypeConvertAndExpand :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Converts a set to the specified encoding, pre-sizing it for &#x27;cap&#x27; elements.</span></span><br><span class="line"><span class="comment"> * The &#x27;panic&#x27; argument controls whether to panic on OOM (panic=1) or return</span></span><br><span class="line"><span class="comment"> * C_ERR on OOM (panic=0). If panic=1 is given, this function always returns</span></span><br><span class="line"><span class="comment"> * C_OK. */</span></span><br><span class="line"><span class="comment">/* 函数setTypeConvertAndExpand用于将集合对象转换为指定的编码，并对其预设大小。</span></span><br><span class="line"><span class="comment"> * 其中，panic参数决定在内存溢出时是否引发panic（值为1时引发，值为0时返回C_ERR）。</span></span><br><span class="line"><span class="comment"> * 如果panic值为1，该函数总是返回C_OK。 */</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">setTypeConvertAndExpand</span><span class="params">(robj *setobj, <span class="keyword">int</span> enc, <span class="keyword">unsigned</span> <span class="keyword">long</span> cap, <span class="keyword">int</span> panic)</span> </span>&#123;</span><br><span class="line">    setTypeIterator *si;</span><br><span class="line">    <span class="comment">// 使用断言验证setobj对象的类型是否为集合，并且编码不同于目标编码</span></span><br><span class="line">    serverAssertWithInfo(<span class="literal">NULL</span>,setobj,setobj-&gt;type == OBJ_SET &amp;&amp;</span><br><span class="line">                             setobj-&gt;encoding != enc);</span><br><span class="line">    <span class="comment">// 如果要转成HASHTABLE类型</span></span><br><span class="line">    <span class="keyword">if</span> (enc == OBJ_ENCODING_HT) &#123;</span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         *   dictSdsHash：用于计算键的哈希值的函数。</span></span><br><span class="line"><span class="comment">         *   NULL：键和值的复制函数，在这里并不需要，所以设为NULL。</span></span><br><span class="line"><span class="comment">         *   dictSdsKeyCompare：用于比较两个键是否相等的函数。</span></span><br><span class="line"><span class="comment">         *   dictSdsDestructor：当需要删除键时，用于释放键内存的函数。</span></span><br><span class="line"><span class="comment">         *   NULL：当需要删除值时，用于释放值内存的函数。在集合中，值并没有实际意义，所以设为NULL。</span></span><br><span class="line"><span class="comment">         *</span></span><br><span class="line"><span class="comment">         *   Set dictionary type. Keys are SDS strings, values are not used. </span></span><br><span class="line"><span class="comment">         *       </span></span><br><span class="line"><span class="comment">         *       dictType setDictType = &#123;</span></span><br><span class="line"><span class="comment">         *           dictSdsHash,                hash function </span></span><br><span class="line"><span class="comment">         *           NULL,                       key dup </span></span><br><span class="line"><span class="comment">         *           NULL,                       val dup </span></span><br><span class="line"><span class="comment">         *           dictSdsKeyCompare,          key compare </span></span><br><span class="line"><span class="comment">         *           dictSdsDestructor,          key destructor </span></span><br><span class="line"><span class="comment">         *           .no_value = 1,              no values in this dict </span></span><br><span class="line"><span class="comment">         *           .keys_are_odd = 1           an SDS string is always an odd pointer </span></span><br><span class="line"><span class="comment">         *      &#125;;</span></span><br><span class="line"><span class="comment">         *      </span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        dict *d = dictCreate(&amp;setDictType);</span><br><span class="line">        sds element;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Presize the dict to avoid rehashing */</span></span><br><span class="line">        <span class="comment">// 预设dict的大小以避免重新哈希</span></span><br><span class="line">        <span class="keyword">if</span> (panic) &#123;</span><br><span class="line">            dictExpand(d, cap);</span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> (dictTryExpand(d, cap) != DICT_OK) &#123;</span><br><span class="line">            dictRelease(d);</span><br><span class="line">            <span class="keyword">return</span> C_ERR;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* To add the elements we extract integers and create redis objects */</span></span><br><span class="line">        <span class="comment">// 创建对应的迭代器</span></span><br><span class="line">        si = setTypeInitIterator(setobj);</span><br><span class="line">        <span class="comment">// 遍历所有的数据，将其加入字典中</span></span><br><span class="line">        <span class="keyword">while</span> ((element = setTypeNextObject(si)) != <span class="literal">NULL</span>) &#123;</span><br><span class="line">            <span class="comment">// int dictAdd(dict *d, void *key, void *val)</span></span><br><span class="line">            serverAssert(dictAdd(d,element,<span class="literal">NULL</span>) == DICT_OK);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 释放迭代器</span></span><br><span class="line">        setTypeReleaseIterator(si);</span><br><span class="line">        <span class="comment">// 释放原来的set对象的内存空间</span></span><br><span class="line">        freeSetObject(setobj); <span class="comment">/* frees the internals but not setobj itself */</span></span><br><span class="line">        <span class="comment">// 将编码改成hashtable</span></span><br><span class="line">        setobj-&gt;encoding = OBJ_ENCODING_HT;</span><br><span class="line">        setobj-&gt;ptr = d;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (enc == OBJ_ENCODING_LISTPACK) &#123;</span><br><span class="line">        <span class="comment">/* Preallocate the minimum two bytes per element (enc/value + backlen) */</span></span><br><span class="line">        <span class="comment">// 预分配每个元素最少两个字节的空间</span></span><br><span class="line">        <span class="keyword">size_t</span> estcap = cap * <span class="number">2</span>;</span><br><span class="line">        <span class="comment">// 如果我们正在从intset转换，并且集合的大小大于0，</span></span><br><span class="line">        <span class="keyword">if</span> (setobj-&gt;encoding == OBJ_ENCODING_INTSET &amp;&amp; setTypeSize(setobj) &gt; <span class="number">0</span>) &#123;</span><br><span class="line">            <span class="comment">/* If we&#x27;re converting from intset, we have a better estimate. */</span></span><br><span class="line">            <span class="comment">// 如果是int类型则进行更好的预估大小</span></span><br><span class="line">            <span class="keyword">size_t</span> s1 = lpEstimateBytesRepeatedInteger(intsetMin(setobj-&gt;ptr), cap);</span><br><span class="line">            <span class="keyword">size_t</span> s2 = lpEstimateBytesRepeatedInteger(intsetMax(setobj-&gt;ptr), cap);</span><br><span class="line">            <span class="comment">// 取最大的值作为容量</span></span><br><span class="line">            estcap = max(s1, s2);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 创建一个大小为estcap的listpack</span></span><br><span class="line">        <span class="keyword">unsigned</span> <span class="keyword">char</span> *lp = lpNew(estcap);</span><br><span class="line">        <span class="keyword">char</span> *str;</span><br><span class="line">        <span class="keyword">size_t</span> len;</span><br><span class="line">        <span class="keyword">int64_t</span> llele;</span><br><span class="line">        <span class="comment">// 创建一个迭代器</span></span><br><span class="line">        si = setTypeInitIterator(setobj);</span><br><span class="line">        <span class="comment">// 针对set进行迭代</span></span><br><span class="line">        <span class="keyword">while</span> (setTypeNext(si, &amp;str, &amp;len, &amp;llele) != <span class="number">-1</span>) &#123;</span><br><span class="line">            <span class="keyword">if</span> (str != <span class="literal">NULL</span>)</span><br><span class="line">                <span class="comment">// 如果为字符串则将字符串压紧队列</span></span><br><span class="line">                lp = lpAppend(lp, (<span class="keyword">unsigned</span> <span class="keyword">char</span> *)str, len);</span><br><span class="line">            <span class="keyword">else</span></span><br><span class="line">                <span class="comment">// 如果为数值则将数值压入队列</span></span><br><span class="line">                lp = lpAppendInteger(lp, llele);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 释放迭代器</span></span><br><span class="line">        setTypeReleaseIterator(si);</span><br><span class="line">        <span class="comment">// 释放原来的set对象</span></span><br><span class="line">        freeSetObject(setobj); <span class="comment">/* frees the internals but not setobj itself */</span></span><br><span class="line">        <span class="comment">// 设置编码为listpack</span></span><br><span class="line">        setobj-&gt;encoding = OBJ_ENCODING_LISTPACK;</span><br><span class="line">        setobj-&gt;ptr = lp;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        serverPanic(<span class="string">&quot;Unsupported set conversion&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> C_OK;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; saddCommand -&gt; setTypeMaybeConvert -&gt; setTypeConvertAndExpand -&gt; dictCreate:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Create a new hash table */</span></span><br><span class="line"><span class="comment">/* dictCreate函数用于创建一个新的哈希表 */</span></span><br><span class="line"><span class="function">dict *<span class="title">dictCreate</span><span class="params">(dictType *type)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">// 计算哈希表元数据的大小</span></span><br><span class="line">    <span class="keyword">size_t</span> metasize = type-&gt;dictMetadataBytes ? type-&gt;dictMetadataBytes() : <span class="number">0</span>;</span><br><span class="line">    <span class="comment">// 使用zmalloc函数为哈希表结构体和元数据分配内存。</span></span><br><span class="line">    dict *d = zmalloc(<span class="keyword">sizeof</span>(*d) + metasize);</span><br><span class="line">    <span class="comment">// 如果元数据大小大于0，将分配的元数据内存区域初始化为0</span></span><br><span class="line">    <span class="keyword">if</span> (metasize) &#123;</span><br><span class="line">        <span class="built_in">memset</span>(dictMetadata(d), <span class="number">0</span>, metasize);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 调用_dictInit函数初始化哈希表</span></span><br><span class="line">    _dictInit(d,type);</span><br><span class="line">    <span class="keyword">return</span> d;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; saddCommand -&gt; setTypeMaybeConvert -&gt; setTypeConvertAndExpand -&gt; dictCreate -&gt; _dictInit:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Initialize the hash table */</span></span><br><span class="line"><span class="comment">/* _dictInit函数用于初始化一个哈希表 */</span></span><br><span class="line"><span class="keyword">int</span> _dictInit(dict *d, dictType *type)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="comment">// 调用_dictReset函数重置哈希表的两个哈希表</span></span><br><span class="line">    _dictReset(d, <span class="number">0</span>);</span><br><span class="line">    _dictReset(d, <span class="number">1</span>);</span><br><span class="line">    <span class="comment">// 设置哈希表的类型</span></span><br><span class="line">    d-&gt;type = type;</span><br><span class="line">    <span class="comment">// 设置rehashidx为-1，表示当前不在进行rehash操作</span></span><br><span class="line">    d-&gt;rehashidx = <span class="number">-1</span>;</span><br><span class="line">    <span class="comment">// 设置pauserehash为0，表示当前没有暂停rehash操作</span></span><br><span class="line">    d-&gt;pauserehash = <span class="number">0</span>;</span><br><span class="line">    <span class="comment">// 返回DICT_OK，表示哈希表初始化成功</span></span><br><span class="line">    <span class="keyword">return</span> DICT_OK;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; saddCommand -&gt; setTypeCreate:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Factory method to return a set that *can* hold &quot;value&quot;. When the object has</span></span><br><span class="line"><span class="comment"> * an integer-encodable value, an intset will be returned. Otherwise a listpack</span></span><br><span class="line"><span class="comment"> * or a regular hash table.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * The size hint indicates approximately how many items will be added which is</span></span><br><span class="line"><span class="comment"> * used to determine the initial representation. */</span></span><br><span class="line"><span class="function">robj *<span class="title">setTypeCreate</span><span class="params">(sds value, <span class="keyword">size_t</span> size_hint)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 如果value可以被表示为长整型，并且预期的大小不超过配置的最大intset条目数，</span></span><br><span class="line">    <span class="comment">// 则创建一个intset对象</span></span><br><span class="line">    <span class="keyword">if</span> (isSdsRepresentableAsLongLong(value,<span class="literal">NULL</span>) == C_OK &amp;&amp; size_hint &lt;= server.set_max_intset_entries)</span><br><span class="line">        <span class="keyword">return</span> createIntsetObject();</span><br><span class="line">    <span class="comment">// 如果预期的大小不超过配置的最大listpack条目数，则创建一个listpack对象</span></span><br><span class="line">    <span class="keyword">if</span> (size_hint &lt;= server.set_max_listpack_entries)</span><br><span class="line">        <span class="keyword">return</span> createSetListpackObject();</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* We may oversize the set by using the hint if the hint is not accurate,</span></span><br><span class="line"><span class="comment">     * but we will assume this is acceptable to maximize performance. */</span></span><br><span class="line">    <span class="comment">// 创建一个常规的集合对象</span></span><br><span class="line">    robj *o = createSetObject();</span><br><span class="line">    <span class="comment">// 扩展集合的大小。如果size_hint不准确，可能会导致集合过大，</span></span><br><span class="line">    <span class="comment">// 但我们假设这是可以接受的，以便最大化性能</span></span><br><span class="line">    dictExpand(o-&gt;ptr, size_hint);</span><br><span class="line">    <span class="keyword">return</span> o;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; saddCommand -&gt; setTypeMaybeConvert -&gt; setTypeConvertAndExpand -&gt; setTypeInitIterator:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"><span class="function">setTypeIterator *<span class="title">setTypeInitIterator</span><span class="params">(robj *subject)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 为集合迭代器分配内存</span></span><br><span class="line">    setTypeIterator *si = zmalloc(<span class="keyword">sizeof</span>(setTypeIterator));</span><br><span class="line">    <span class="comment">// 设置迭代器的subject为传入的集合对象</span></span><br><span class="line">    si-&gt;subject = subject;</span><br><span class="line">    <span class="comment">// 设置迭代器的编码方式为集合对象的编码方式</span></span><br><span class="line">    si-&gt;encoding = subject-&gt;encoding;</span><br><span class="line">    <span class="comment">// 根据编码方式的不同，初始化不同类型的迭代器</span></span><br><span class="line">    <span class="keyword">if</span> (si-&gt;encoding == OBJ_ENCODING_HT) &#123;</span><br><span class="line">        <span class="comment">// 如果编码方式为哈希表，初始化字典迭代器</span></span><br><span class="line">        si-&gt;di = dictGetIterator(subject-&gt;ptr);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (si-&gt;encoding == OBJ_ENCODING_INTSET) &#123;</span><br><span class="line">        <span class="comment">// 如果编码方式为整数集合，设置迭代器的当前位置为0</span></span><br><span class="line">        si-&gt;ii = <span class="number">0</span>;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (si-&gt;encoding == OBJ_ENCODING_LISTPACK) &#123;</span><br><span class="line">        <span class="comment">// 如果编码方式为列表包，将迭代器指针设置为NULL</span></span><br><span class="line">        si-&gt;lpi = <span class="literal">NULL</span>;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        serverPanic(<span class="string">&quot;Unknown set encoding&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> si;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; saddCommand -&gt; setTypeAdd -&gt; setTypeAddAux:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br><span class="line">110</span><br><span class="line">111</span><br><span class="line">112</span><br><span class="line">113</span><br><span class="line">114</span><br><span class="line">115</span><br><span class="line">116</span><br><span class="line">117</span><br><span class="line">118</span><br><span class="line">119</span><br><span class="line">120</span><br><span class="line">121</span><br><span class="line">122</span><br><span class="line">123</span><br><span class="line">124</span><br><span class="line">125</span><br><span class="line">126</span><br><span class="line">127</span><br><span class="line">128</span><br><span class="line">129</span><br><span class="line">130</span><br><span class="line">131</span><br><span class="line">132</span><br><span class="line">133</span><br><span class="line">134</span><br><span class="line">135</span><br><span class="line">136</span><br><span class="line">137</span><br><span class="line">138</span><br><span class="line">139</span><br><span class="line">140</span><br><span class="line">141</span><br><span class="line">142</span><br><span class="line">143</span><br><span class="line">144</span><br><span class="line">145</span><br><span class="line">146</span><br><span class="line">147</span><br><span class="line">148</span><br><span class="line">149</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Add member. This function is optimized for the different encodings. The</span></span><br><span class="line"><span class="comment"> * value can be provided as an sds string (indicated by passing str_is_sds =</span></span><br><span class="line"><span class="comment"> * 1), as string and length (str_is_sds = 0) or as an integer in which case str</span></span><br><span class="line"><span class="comment"> * is set to NULL and llval is provided instead.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Returns 1 if the value was added and 0 if it was already a member. */</span></span><br><span class="line"><span class="comment">/* </span></span><br><span class="line"><span class="comment"> * 如果值被添加，返回1。如果它已经是成员，返回0。*/</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">setTypeAddAux</span><span class="params">(robj *<span class="built_in">set</span>, <span class="keyword">char</span> *str, <span class="keyword">size_t</span> len, <span class="keyword">int64_t</span> llval, <span class="keyword">int</span> str_is_sds)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 创建一个临时缓冲区用于存储转换为字符串的整数</span></span><br><span class="line">    <span class="keyword">char</span> tmpbuf[LONG_STR_SIZE];</span><br><span class="line">    <span class="comment">// 如果str是NULL，那么我们需要处理的是一个整数值，我们需要将其添加到集合中</span></span><br><span class="line">    <span class="keyword">if</span> (!str) &#123;</span><br><span class="line">        <span class="comment">// 如果集合的编码方式是整数集合</span></span><br><span class="line">        <span class="keyword">if</span> (<span class="built_in">set</span>-&gt;encoding == OBJ_ENCODING_INTSET) &#123;</span><br><span class="line">            <span class="keyword">uint8_t</span> success = <span class="number">0</span>;</span><br><span class="line">            <span class="comment">// 尝试将整数添加到整数集合中</span></span><br><span class="line">            <span class="built_in">set</span>-&gt;ptr = intsetAdd(<span class="built_in">set</span>-&gt;ptr, llval, &amp;success);</span><br><span class="line">            <span class="comment">// 如果添加成功（已存在则success为0），可能需要将整数集合转换为其他类型的集合</span></span><br><span class="line">            <span class="keyword">if</span> (success) maybeConvertIntset(<span class="built_in">set</span>);</span><br><span class="line">            <span class="keyword">return</span> success;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">/* Convert int to string. */</span></span><br><span class="line">        <span class="comment">// 如果集合的编码不是整数集合，我们需要将整数转换为字符串</span></span><br><span class="line">        len = ll2string(tmpbuf, <span class="keyword">sizeof</span> tmpbuf, llval);</span><br><span class="line">        str = tmpbuf;</span><br><span class="line">        <span class="comment">// 标识为数值而不是字符串</span></span><br><span class="line">        str_is_sds = <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 在这一点，我们应该有一个非NULL的str</span></span><br><span class="line">    serverAssert(str);</span><br><span class="line">    <span class="comment">// 如果集合的编码方式是哈希表</span></span><br><span class="line">    <span class="keyword">if</span> (<span class="built_in">set</span>-&gt;encoding == OBJ_ENCODING_HT) &#123;</span><br><span class="line">        <span class="comment">/* Avoid duping the string if it is an sds string. */</span></span><br><span class="line">        <span class="comment">// 根据str是否是sds字符串，创建或获取sds字符串</span></span><br><span class="line">        sds sdsval = str_is_sds ? (sds)str : sdsnewlen(str, len);</span><br><span class="line">        dict *ht = <span class="built_in">set</span>-&gt;ptr;</span><br><span class="line">        <span class="comment">// 查找新元素的插入位置</span></span><br><span class="line">        <span class="keyword">void</span> *position = dictFindPositionForInsert(ht, sdsval, <span class="literal">NULL</span>);</span><br><span class="line">        <span class="keyword">if</span> (position) &#123;</span><br><span class="line">            <span class="comment">/* Key doesn&#x27;t already exist in the set. Add it but dup the key. */</span></span><br><span class="line">            <span class="comment">// 如果集合中不存在该元素，添加它并复制键</span></span><br><span class="line">            <span class="keyword">if</span> (sdsval == str) sdsval = sdsdup(sdsval);</span><br><span class="line">            <span class="comment">// 在指定的bucket中插入值</span></span><br><span class="line">            dictInsertAtPosition(ht, sdsval, position);</span><br><span class="line">        &#125; <span class="keyword">else</span> <span class="keyword">if</span> (sdsval != str) &#123;</span><br><span class="line">            <span class="comment">/* String is already a member. Free our temporary sds copy. */</span></span><br><span class="line">            <span class="comment">// 如果已经在集合中了，则释放sdsval的内存</span></span><br><span class="line">            sdsfree(sdsval);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="keyword">return</span> (position != <span class="literal">NULL</span>);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (<span class="built_in">set</span>-&gt;encoding == OBJ_ENCODING_LISTPACK) &#123;</span><br><span class="line">        <span class="comment">// 如果编码类型为LISTPACK</span></span><br><span class="line">        <span class="comment">// 获取listpack</span></span><br><span class="line">        <span class="keyword">unsigned</span> <span class="keyword">char</span> *lp = <span class="built_in">set</span>-&gt;ptr;</span><br><span class="line">        <span class="comment">// 获取listpack中的第一个数据</span></span><br><span class="line">        <span class="keyword">unsigned</span> <span class="keyword">char</span> *p = lpFirst(lp);</span><br><span class="line">        <span class="keyword">if</span> (p != <span class="literal">NULL</span>)</span><br><span class="line">            <span class="comment">// 遍历查找对应的值是否存在</span></span><br><span class="line">            p = lpFind(lp, p, (<span class="keyword">unsigned</span> <span class="keyword">char</span>*)str, len, <span class="number">0</span>);</span><br><span class="line">        <span class="comment">// 若不存在</span></span><br><span class="line">        <span class="keyword">if</span> (p == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            <span class="comment">/* Not found.  */</span></span><br><span class="line">            <span class="comment">// lp结点数量和大小小于阈值，则无需进行类型转化，直接将数据加入队列</span></span><br><span class="line">            <span class="keyword">if</span> (lpLength(lp) &lt; server.set_max_listpack_entries &amp;&amp;</span><br><span class="line">                len &lt;= server.set_max_listpack_value &amp;&amp;</span><br><span class="line">                lpSafeToAdd(lp, len))</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="keyword">if</span> (str == tmpbuf) &#123;</span><br><span class="line">                    <span class="comment">/* This came in as integer so we can avoid parsing it again.</span></span><br><span class="line"><span class="comment">                     * <span class="doctag">TODO:</span> Create and use lpFindInteger; don&#x27;t go via string. */</span></span><br><span class="line">                    <span class="comment">// 将int类型的数据加入队列</span></span><br><span class="line">                    lp = lpAppendInteger(lp, llval);</span><br><span class="line">                &#125; <span class="keyword">else</span> &#123;                    </span><br><span class="line">                    <span class="comment">// 将str类型的数据加入队列</span></span><br><span class="line">                    lp = lpAppend(lp, (<span class="keyword">unsigned</span> <span class="keyword">char</span>*)str, len);</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="comment">// 令set类型的指针直接指向listpack</span></span><br><span class="line">                <span class="built_in">set</span>-&gt;ptr = lp;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                <span class="comment">/* Size limit is reached. Convert to hashtable and add. */</span></span><br><span class="line">                <span class="comment">// 若list超出限制则进行类型转化成OBJ_ENCODING_HT和扩容</span></span><br><span class="line">                setTypeConvertAndExpand(<span class="built_in">set</span>, OBJ_ENCODING_HT, lpLength(lp) + <span class="number">1</span>, <span class="number">1</span>);</span><br><span class="line">                <span class="comment">// 将字符串加入字典中</span></span><br><span class="line">                serverAssert(dictAdd(<span class="built_in">set</span>-&gt;ptr,sdsnewlen(str,len),<span class="literal">NULL</span>) == DICT_OK);</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (<span class="built_in">set</span>-&gt;encoding == OBJ_ENCODING_INTSET) &#123;</span><br><span class="line">        <span class="comment">// 如果set是int类型  </span></span><br><span class="line">        <span class="keyword">long</span> <span class="keyword">long</span> value;</span><br><span class="line">        <span class="comment">// 字符串转化成int类型</span></span><br><span class="line">        <span class="keyword">if</span> (string2ll(str, len, &amp;value)) &#123;</span><br><span class="line">            <span class="keyword">uint8_t</span> success = <span class="number">0</span>;</span><br><span class="line">            <span class="comment">// 将int数据吗加入intset中</span></span><br><span class="line">            <span class="built_in">set</span>-&gt;ptr = intsetAdd(<span class="built_in">set</span>-&gt;ptr,value,&amp;success);</span><br><span class="line">            <span class="comment">// 如果加入成功，检查是否需要转化成OBJ_ENCODING_HT</span></span><br><span class="line">            <span class="keyword">if</span> (success) &#123;</span><br><span class="line">                maybeConvertIntset(<span class="built_in">set</span>);</span><br><span class="line">                <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">// 如果类型转化失败</span></span><br><span class="line">            <span class="comment">/* Check if listpack encoding is safe not to cross any threshold. */</span></span><br><span class="line">            <span class="keyword">size_t</span> maxelelen = <span class="number">0</span>, totsize = <span class="number">0</span>;</span><br><span class="line">            <span class="comment">// 获取set的数据大小</span></span><br><span class="line">            <span class="keyword">unsigned</span> <span class="keyword">long</span> n = intsetLen(<span class="built_in">set</span>-&gt;ptr);</span><br><span class="line">            <span class="keyword">if</span> (n != <span class="number">0</span>) &#123;</span><br><span class="line">                <span class="comment">// 预估扩容</span></span><br><span class="line">                <span class="keyword">size_t</span> elelen1 = sdigits10(intsetMax(<span class="built_in">set</span>-&gt;ptr));</span><br><span class="line">                <span class="keyword">size_t</span> elelen2 = sdigits10(intsetMin(<span class="built_in">set</span>-&gt;ptr));</span><br><span class="line">                maxelelen = max(elelen1, elelen2);</span><br><span class="line">                <span class="keyword">size_t</span> s1 = lpEstimateBytesRepeatedInteger(intsetMax(<span class="built_in">set</span>-&gt;ptr), n);</span><br><span class="line">                <span class="keyword">size_t</span> s2 = lpEstimateBytesRepeatedInteger(intsetMin(<span class="built_in">set</span>-&gt;ptr), n);</span><br><span class="line">                totsize = max(s1, s2);</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="keyword">if</span> (intsetLen((<span class="keyword">const</span> intset*)<span class="built_in">set</span>-&gt;ptr) &lt; server.set_max_listpack_entries &amp;&amp;</span><br><span class="line">                len &lt;= server.set_max_listpack_value &amp;&amp;</span><br><span class="line">                maxelelen &lt;= server.set_max_listpack_value &amp;&amp;</span><br><span class="line">                lpSafeToAdd(<span class="literal">NULL</span>, totsize + len))</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="comment">/* In the &quot;safe to add&quot; check above we assumed all elements in</span></span><br><span class="line"><span class="comment">                 * the intset are of size maxelelen. This is an upper bound. */</span></span><br><span class="line">                <span class="comment">// 小于listpack的限制的话，将类型转化成listpack</span></span><br><span class="line">                setTypeConvertAndExpand(<span class="built_in">set</span>, OBJ_ENCODING_LISTPACK,</span><br><span class="line">                                        intsetLen(<span class="built_in">set</span>-&gt;ptr) + <span class="number">1</span>, <span class="number">1</span>);</span><br><span class="line">                <span class="keyword">unsigned</span> <span class="keyword">char</span> *lp = <span class="built_in">set</span>-&gt;ptr;</span><br><span class="line">                <span class="comment">// 将值加入lp</span></span><br><span class="line">                lp = lpAppend(lp, (<span class="keyword">unsigned</span> <span class="keyword">char</span> *)str, len);</span><br><span class="line">                <span class="comment">// lp进行缩容（如果大小小于分配的大小，则重新分配合适的内存大小）</span></span><br><span class="line">                lp = lpShrinkToFit(lp);</span><br><span class="line">                <span class="built_in">set</span>-&gt;ptr = lp;</span><br><span class="line">                <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                <span class="comment">// 如果超出了listpack的限制则转化成OBJ_ENCODING_HT</span></span><br><span class="line">                setTypeConvertAndExpand(<span class="built_in">set</span>, OBJ_ENCODING_HT,</span><br><span class="line">                                        intsetLen(<span class="built_in">set</span>-&gt;ptr) + <span class="number">1</span>, <span class="number">1</span>);</span><br><span class="line">                <span class="comment">/* The set *was* an intset and this value is not integer</span></span><br><span class="line"><span class="comment">                 * encodable, so dictAdd should always work. */</span></span><br><span class="line">                <span class="comment">// 将值加入HT中</span></span><br><span class="line">                serverAssert(dictAdd(<span class="built_in">set</span>-&gt;ptr,sdsnewlen(str,len),<span class="literal">NULL</span>) == DICT_OK);</span><br><span class="line">                <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        serverPanic(<span class="string">&quot;Unknown set encoding&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; saddCommand -&gt; setTypeAdd -&gt; setTypeAddAux -&gt; intsetAdd:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Insert an integer in the intset */</span></span><br><span class="line"><span class="function">intset *<span class="title">intsetAdd</span><span class="params">(intset *is, <span class="keyword">int64_t</span> value, <span class="keyword">uint8_t</span> *success)</span> </span>&#123;</span><br><span class="line">    <span class="comment">/* 获取该值的编码方式 */</span></span><br><span class="line">    <span class="keyword">uint8_t</span> valenc = _intsetValueEncoding(value);</span><br><span class="line">    <span class="keyword">uint32_t</span> pos;</span><br><span class="line">    <span class="comment">/* 假设添加操作将成功 */</span></span><br><span class="line">    <span class="keyword">if</span> (success) *success = <span class="number">1</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Upgrade encoding if necessary. If we need to upgrade, we know that</span></span><br><span class="line"><span class="comment">     * this value should be either appended (if &gt; 0) or prepended (if &lt; 0),</span></span><br><span class="line"><span class="comment">     * because it lies outside the range of existing values. */</span></span><br><span class="line">    <span class="comment">/* 如果需要，升级编码（INTSET_ENC_INT64/INTSET_ENC_INT32/INTSET_ENC_INT16）。</span></span><br><span class="line"><span class="comment">     * 如果我们需要升级，我们知道该值应该被追加（如果&gt; 0）或者被预置（如果&lt; 0），</span></span><br><span class="line"><span class="comment">     * 因为它超出现有值的范围。 */</span></span><br><span class="line">    <span class="keyword">if</span> (valenc &gt; intrev32ifbe(is-&gt;encoding)) &#123;</span><br><span class="line">        <span class="comment">/* This always succeeds, so we don&#x27;t need to curry *success. */</span></span><br><span class="line">        <span class="keyword">return</span> intsetUpgradeAndAdd(is,value);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">/* Abort if the value is already present in the set.</span></span><br><span class="line"><span class="comment">         * This call will populate &quot;pos&quot; with the right position to insert</span></span><br><span class="line"><span class="comment">         * the value when it cannot be found. */</span></span><br><span class="line">        <span class="comment">/* 如果值已经存在于集合中，中止操作。</span></span><br><span class="line"><span class="comment">         * 这个调用将用正确的位置填充“pos”，以便插入</span></span><br><span class="line"><span class="comment">         * 找不到的值。 */</span></span><br><span class="line">        <span class="comment">// 二分查找！！</span></span><br><span class="line">        <span class="keyword">if</span> (intsetSearch(is,value,&amp;pos)) &#123;</span><br><span class="line">            <span class="keyword">if</span> (success) *success = <span class="number">0</span>;</span><br><span class="line">            <span class="keyword">return</span> is;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">/* 调整整数集合的大小，为新值提供空间 */</span></span><br><span class="line">        is = intsetResize(is,intrev32ifbe(is-&gt;length)+<span class="number">1</span>);</span><br><span class="line">        <span class="comment">/* 如果位置小于当前长度，移动尾部以提供空间 */</span></span><br><span class="line">        <span class="keyword">if</span> (pos &lt; intrev32ifbe(is-&gt;length)) intsetMoveTail(is,pos,pos+<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 往二分查找到的位置插入值</span></span><br><span class="line">    _intsetSet(is,pos,value);</span><br><span class="line">    <span class="comment">/* 增加整数集合的长度 */</span></span><br><span class="line">    is-&gt;length = intrev32ifbe(intrev32ifbe(is-&gt;length)+<span class="number">1</span>);</span><br><span class="line">    <span class="keyword">return</span> is;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; saddCommand -&gt; setTypeAdd -&gt; setTypeAddAux -&gt; dictFindPositionForInsert:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Finds and returns the position within the dict where the provided key should</span></span><br><span class="line"><span class="comment"> * be inserted using dictInsertAtPosition if the key does not already exist in</span></span><br><span class="line"><span class="comment"> * the dict. If the key exists in the dict, NULL is returned and the optional</span></span><br><span class="line"><span class="comment"> * &#x27;existing&#x27; entry pointer is populated, if provided. */</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> *<span class="title">dictFindPositionForInsert</span><span class="params">(dict *d, <span class="keyword">const</span> <span class="keyword">void</span> *key, dictEntry **existing)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">long</span> idx, table;</span><br><span class="line">    dictEntry *he;</span><br><span class="line">    <span class="comment">// 对key进行hash计算</span></span><br><span class="line">    <span class="keyword">uint64_t</span> hash = dictHashKey(d, key);</span><br><span class="line">    <span class="keyword">if</span> (existing) *existing = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="comment">/* 如果字典正在进行rehash操作，执行一步rehash */</span></span><br><span class="line">    <span class="keyword">if</span> (dictIsRehashing(d)) _dictRehashStep(d);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Expand the hash table if needed */</span></span><br><span class="line">    <span class="comment">/* 如果需要，扩展哈希表 */</span></span><br><span class="line">    <span class="keyword">if</span> (_dictExpandIfNeeded(d) == DICT_ERR)</span><br><span class="line">        <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    <span class="comment">/* 遍历哈希表 */</span></span><br><span class="line">    <span class="keyword">for</span> (table = <span class="number">0</span>; table &lt;= <span class="number">1</span>; table++) &#123;</span><br><span class="line">        <span class="comment">/* 计算索引 */</span></span><br><span class="line">        idx = hash &amp; DICTHT_SIZE_MASK(d-&gt;ht_size_exp[table]);</span><br><span class="line">        <span class="comment">/* Search if this slot does not already contain the given key */</span></span><br><span class="line">        <span class="comment">/* 检查这个槽是否已经包含了给定的键 */</span></span><br><span class="line">        he = d-&gt;ht_table[table][idx];</span><br><span class="line">        <span class="keyword">while</span>(he) &#123;</span><br><span class="line">            <span class="comment">/* 获取字典条目的键 */</span></span><br><span class="line">            <span class="keyword">void</span> *he_key = dictGetKey(he);</span><br><span class="line">            <span class="comment">/* 如果键相同，设置existing并返回NULL */</span></span><br><span class="line">            <span class="keyword">if</span> (key == he_key || dictCompareKeys(d, key, he_key)) &#123;</span><br><span class="line">                <span class="keyword">if</span> (existing) *existing = he;</span><br><span class="line">                <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            <span class="comment">/* 获取下一个字典条目 */</span></span><br><span class="line">            he = dictGetNext(he);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">/* 如果字典不在进行rehash操作，跳出循环 */</span></span><br><span class="line">        <span class="keyword">if</span> (!dictIsRehashing(d)) <span class="keyword">break</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* If we are in the process of rehashing the hash table, the bucket is</span></span><br><span class="line"><span class="comment">     * always returned in the context of the second (new) hash table. */</span></span><br><span class="line">    <span class="comment">/* 如果我们正在对哈希表进行rehash操作，那么总是在第二个（新）哈希表的上下文中返回bucket */</span></span><br><span class="line">    dictEntry **bucket = &amp;d-&gt;ht_table[dictIsRehashing(d) ? <span class="number">1</span> : <span class="number">0</span>][idx];</span><br><span class="line">    <span class="keyword">return</span> bucket;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2023/09/23/redis/redis_sadd/" title="源码阅读(六)-Redis中的SADD命令">https://nytech3.github.io/2023/09/23/redis/redis_sadd/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/c/" rel="tag"># c</a>
+              <a href="/tags/redis/" rel="tag"># redis</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/09/22/redis/redis_blpop/" rel="prev" title="源码阅读(五)-Redis中的BLPOP命令">
+      <i class="fa fa-chevron-left"></i> 源码阅读(五)-Redis中的BLPOP命令
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2023/09/24/redis/redis_zadd/" rel="next" title="源码阅读(七)-Redis中的ZADD命令">
+      源码阅读(七)-Redis中的ZADD命令 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B"><span class="nav-number">1.</span> <span class="nav-text">工作流程</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text">源码解析</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#SADD-json"><span class="nav-number">2.1.</span> <span class="nav-text">SADD json</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%91%BD%E4%BB%A4%E6%89%A7%E8%A1%8C%E6%A0%B7%E4%BE%8B"><span class="nav-number">2.2.</span> <span class="nav-text">命令执行样例</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.3.</span> <span class="nav-text">代码分析</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

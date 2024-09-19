@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="检查命令是否有设置超时时间，没有的话直接返回 遍历所有的键，逐个进行出队列取值，或者阻塞 检查键是否在client选择的数据库中 如果对应的键不存在则跳过 检查对象是否为List，如果不是则返回 获取键对应的值列表长度，为0则跳过 判断是否允许阻塞队列，如果不允许则直接返回 没有数据则阻塞队列">
+<meta property="og:type" content="article">
+<meta property="og:title" content="源码阅读(五)-Redis中的BLPOP命令">
+<meta property="og:url" content="https://nytech3.github.io/2023/09/22/redis/redis_blpop/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="检查命令是否有设置超时时间，没有的话直接返回 遍历所有的键，逐个进行出队列取值，或者阻塞 检查键是否在client选择的数据库中 如果对应的键不存在则跳过 检查对象是否为List，如果不是则返回 获取键对应的值列表长度，为0则跳过 判断是否允许阻塞队列，如果不允许则直接返回 没有数据则阻塞队列">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-09-22T10:00:00.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:56.999Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="c">
+<meta property="article:tag" content="redis">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/2023/09/22/redis/redis_blpop/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>源码阅读(五)-Redis中的BLPOP命令 | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2023/09/22/redis/redis_blpop/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          源码阅读(五)-Redis中的BLPOP命令
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-09-22 18:00:00" itemprop="dateCreated datePublished" datetime="2023-09-22T18:00:00+08:00">2023-09-22</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/technology/" itemprop="url" rel="index"><span itemprop="name">technology</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2023/09/22/redis/redis_blpop/" class="post-meta-item leancloud_visitors" data-flag-title="源码阅读(五)-Redis中的BLPOP命令" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<ol>
+<li>检查命令是否有设置超时时间，没有的话直接返回</li>
+<li>遍历所有的键，逐个进行出队列取值，或者阻塞</li>
+<li>检查键是否在client选择的数据库中</li>
+<li>如果对应的键不存在则跳过</li>
+<li>检查对象是否为List，如果不是则返回</li>
+<li>获取键对应的值列表长度，为0则跳过</li>
+<li>判断是否允许阻塞队列，如果不允许则直接返回</li>
+<li>没有数据则阻塞队列</li>
+</ol>
+<span id="more"></span>
+<blockquote>
+<p>关于阻塞的键是如何通知到客户端的，暂时不分析，大概在分析完所有主要命令之后，会对事件的主流程进行解析（感觉这样到时候看主流程的事件触发会对各个事件比较了解不会磕磕碰碰），<br>到时候再看看redis对于命令的是否是单线程的，目前还不是很了解。</p>
+</blockquote>
+<h1 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h1><h2 id="BLPOP-json"><a href="#BLPOP-json" class="headerlink" title="BLPOP json"></a>BLPOP json</h2><p>作用为获取并移除列表中的第一个元素, 如果获取不到则将一直阻塞能获取到,其时间复杂度为O(n),这个n取决于阻塞了多少个key。<br>可以用Redis的BLPOP实现一个简单的任务队列，生产者将任务作为数据放入一个列表，消费者则使用BLPOP命令从列表中取出任务并<br>执行。由于BLPOP是一个阻塞命令，所以当队列中没有任务时，消费者会等待直到有新的任务到来。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;BLPOP&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;summary&quot;</span>: <span class="string">&quot;Remove and get the first element in a list, or block until one is available&quot;</span>,</span><br><span class="line">        <span class="string">&quot;complexity&quot;</span>: <span class="string">&quot;O(N) where N is the number of provided keys.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;group&quot;</span>: <span class="string">&quot;list&quot;</span>,</span><br><span class="line">        <span class="string">&quot;since&quot;</span>: <span class="string">&quot;2.0.0&quot;</span>,</span><br><span class="line">        <span class="string">&quot;arity&quot;</span>: <span class="number">-3</span>,</span><br><span class="line">        <span class="string">&quot;function&quot;</span>: <span class="string">&quot;blpopCommand&quot;</span>,</span><br><span class="line">        <span class="string">&quot;history&quot;</span>: [</span><br><span class="line">            [</span><br><span class="line">                <span class="string">&quot;6.0&quot;</span>,</span><br><span class="line">                <span class="string">&quot;`timeout` is interpreted as a double instead of an integer.&quot;</span></span><br><span class="line">            ]</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;command_flags&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;WRITE&quot;</span>,</span><br><span class="line">            <span class="string">&quot;NOSCRIPT&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;acl_categories&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;LIST&quot;</span>,</span><br><span class="line">            <span class="string">&quot;BLOCKING&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;key_specs&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;flags&quot;</span>: [</span><br><span class="line">                    <span class="string">&quot;WRITE&quot;</span></span><br><span class="line">                ],</span><br><span class="line">                <span class="string">&quot;begin_search&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;index&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;pos&quot;</span>: <span class="number">1</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;,</span><br><span class="line">                <span class="string">&quot;find_keys&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;range&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;lastkey&quot;</span>: <span class="number">-2</span>,</span><br><span class="line">                        <span class="string">&quot;step&quot;</span>: <span class="number">1</span>,</span><br><span class="line">                        <span class="string">&quot;limit&quot;</span>: <span class="number">0</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;arguments&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;key&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;key&quot;</span>,</span><br><span class="line">                <span class="string">&quot;key_spec_index&quot;</span>: <span class="number">0</span>,</span><br><span class="line">                <span class="string">&quot;multiple&quot;</span>: <span class="literal">true</span></span><br><span class="line">            &#125;,</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;timeout&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;double&quot;</span></span><br><span class="line">            &#125;</span><br><span class="line">        ]</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+<h2 id="代码分析"><a href="#代码分析" class="headerlink" title="代码分析"></a>代码分析</h2><p>-&gt; blpopCommand -&gt; blockingPopGenericCommand:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Blocking RPOP/LPOP/LMPOP</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * &#x27;numkeys&#x27; is the number of keys.</span></span><br><span class="line"><span class="comment"> * &#x27;timeout_idx&#x27; parameter position of block timeout.</span></span><br><span class="line"><span class="comment"> * &#x27;where&#x27; LIST_HEAD for LEFT, LIST_TAIL for RIGHT.</span></span><br><span class="line"><span class="comment"> * &#x27;count&#x27; is the number of elements requested to pop, or -1 for plain single pop.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * When count is -1, a reply of a single bulk-string will be used.</span></span><br><span class="line"><span class="comment"> * When count &gt; 0, an array reply will be used. */</span></span><br><span class="line"><span class="comment">// count 为-1则表示返回一个单一的值（非数组形式）</span></span><br><span class="line"><span class="comment">// 当 count &gt; 0时，将返回一个数组</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">blockingPopGenericCommand</span><span class="params">(client *c, robj **keys, <span class="keyword">int</span> numkeys, <span class="keyword">int</span> where, <span class="keyword">int</span> timeout_idx, <span class="keyword">long</span> count)</span> </span>&#123;</span><br><span class="line">    robj *o;</span><br><span class="line">    robj *key;</span><br><span class="line">    <span class="keyword">mstime_t</span> timeout;</span><br><span class="line">    <span class="keyword">int</span> j;</span><br><span class="line">    <span class="comment">// 获取超时时间，如果获取失败则返回</span></span><br><span class="line">    <span class="keyword">if</span> (getTimeoutFromObjectOrReply(c,c-&gt;argv[timeout_idx],&amp;timeout,UNIT_SECONDS)</span><br><span class="line">        != C_OK) <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Traverse all input keys, we take action only based on one key. */</span></span><br><span class="line">    <span class="comment">// 遍历所有的key</span></span><br><span class="line">    <span class="keyword">for</span> (j = <span class="number">0</span>; j &lt; numkeys; j++) &#123;</span><br><span class="line">        <span class="comment">// 获取第j个key</span></span><br><span class="line">        key = keys[j];</span><br><span class="line">        <span class="comment">// 检查key是否存在client选择的db中</span></span><br><span class="line">        o = lookupKeyWrite(c-&gt;db, key);</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Non-existing key, move to next key. */</span></span><br><span class="line">        <span class="comment">// 如果key不存在则跳过</span></span><br><span class="line">        <span class="keyword">if</span> (o == <span class="literal">NULL</span>) <span class="keyword">continue</span>;</span><br><span class="line">        <span class="comment">// 检查对象的类型是否为LIST</span></span><br><span class="line">        <span class="keyword">if</span> (checkType(c, o, OBJ_LIST)) <span class="keyword">return</span>;</span><br><span class="line">        <span class="comment">// 获取对象长度</span></span><br><span class="line">        <span class="keyword">long</span> llen = listTypeLength(o);</span><br><span class="line">        <span class="comment">/* Empty list, move to next key. */</span></span><br><span class="line">        <span class="comment">// 如果长度为0，则跳过</span></span><br><span class="line">        <span class="keyword">if</span> (llen == <span class="number">0</span>) <span class="keyword">continue</span>;</span><br><span class="line">        <span class="comment">// 当 count 不为 -1时，该操作类似于带有 count 选项的正常 [LR]POP，不同之处在于我们以嵌套数组的方式弹出一系列元素。</span></span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         *  blmpop 0 1 a left count 1</span></span><br><span class="line"><span class="comment">                1) &quot;a&quot;</span></span><br><span class="line"><span class="comment">                2)  1) &quot;9172&quot;</span></span><br><span class="line"><span class="comment">                    2) &quot;9171&quot;</span></span><br><span class="line"><span class="comment">                    3) &quot;9170&quot;</span></span><br><span class="line"><span class="comment">                    4) &quot;9169&quot;</span></span><br><span class="line"><span class="comment">                    5) &quot;9168&quot;</span></span><br><span class="line"><span class="comment">                    6) &quot;9167&quot;</span></span><br><span class="line"><span class="comment">                    7) &quot;9166&quot;</span></span><br><span class="line"><span class="comment">                    8) &quot;9165&quot;</span></span><br><span class="line"><span class="comment">                    9) &quot;9164&quot;</span></span><br><span class="line"><span class="comment">                   10) &quot;9163&quot;</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        <span class="keyword">if</span> (count != <span class="number">-1</span>) &#123;</span><br><span class="line">            <span class="comment">/* BLMPOP, non empty list, like a normal [LR]POP with count option.</span></span><br><span class="line"><span class="comment">             * The difference here we pop a range of elements in a nested arrays way. */</span></span><br><span class="line">            <span class="comment">// 批量获取数据</span></span><br><span class="line">            listPopRangeAndReplyWithKey(c, o, key, where, count, <span class="number">1</span>, <span class="literal">NULL</span>);</span><br><span class="line"></span><br><span class="line">            <span class="comment">/* Replicate it as [LR]POP COUNT. */</span></span><br><span class="line">            robj *count_obj = createStringObjectFromLongLong((count &gt; llen) ? llen : count);</span><br><span class="line">            <span class="comment">// 重写客户端命令为 [LR]POP COUNT</span></span><br><span class="line">            rewriteClientCommandVector(c, <span class="number">3</span>,</span><br><span class="line">                                       (where == LIST_HEAD) ? shared.lpop : shared.rpop,</span><br><span class="line">                                       key, count_obj);</span><br><span class="line">            <span class="comment">// 减少count_obj引用数</span></span><br><span class="line">            decrRefCount(count_obj);</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Non empty list, this is like a normal [LR]POP. */</span></span><br><span class="line">        <span class="comment">/* 非空列表，这就像正常的LPOP或RPOP. */</span></span><br><span class="line">        <span class="comment">// 获取数据</span></span><br><span class="line">        robj *value = listTypePop(o,where);</span><br><span class="line">        serverAssert(value != <span class="literal">NULL</span>);</span><br><span class="line">        <span class="comment">// 添加回复长度为2的数组，包含键和值</span></span><br><span class="line">        addReplyArrayLen(c,<span class="number">2</span>);</span><br><span class="line">        addReplyBulk(c,key);</span><br><span class="line">        addReplyBulk(c,value);</span><br><span class="line">        <span class="comment">// 减少value的引用计数</span></span><br><span class="line">        decrRefCount(value);</span><br><span class="line">        listElementsRemoved(c,key,where,o,<span class="number">1</span>,<span class="number">1</span>,<span class="literal">NULL</span>);</span><br><span class="line">        <span class="comment">// 重写命令</span></span><br><span class="line">        <span class="comment">/* Replicate it as an [LR]POP instead of B[LR]POP. */</span></span><br><span class="line">        rewriteClientCommandVector(c,<span class="number">2</span>,</span><br><span class="line">            (where == LIST_HEAD) ? shared.lpop : shared.rpop,</span><br><span class="line">            key);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* If we are not allowed to block the client, the only thing</span></span><br><span class="line"><span class="comment">     * we can do is treating it as a timeout (even with timeout 0). */</span></span><br><span class="line">    <span class="comment">/* 如果我们不允许阻塞客户端，我们能做的唯一事情就是将其视为超时（即使超时为0） */</span></span><br><span class="line">    <span class="keyword">if</span> (c-&gt;flags &amp; CLIENT_DENY_BLOCKING) &#123;</span><br><span class="line">        addReplyNullArray(c);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* If the keys do not exist we must block */</span></span><br><span class="line">    <span class="comment">/* 如果键没有数据，我们必须阻塞 */</span></span><br><span class="line">    blockForKeys(c,BLOCKED_LIST,keys,numkeys,timeout,<span class="number">0</span>);</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>-&gt; blpopCommand -&gt; blockingPopGenericCommand -&gt; listTypePop:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">// 函数listTypePop的目的是从一个列表类型的对象中弹出一个元素。</span></span><br><span class="line"><span class="comment">// 参数subject是需要操作的列表对象，参数where是弹出元素的位置，可以是头部(LIST_HEAD)或尾部(LIST_TAIL)。</span></span><br><span class="line"><span class="function">robj *<span class="title">listTypePop</span><span class="params">(robj *subject, <span class="keyword">int</span> where)</span> </span>&#123;</span><br><span class="line">    robj *value = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="comment">// 如果列表的编码类型是quicklist</span></span><br><span class="line">    <span class="keyword">if</span> (subject-&gt;encoding == OBJ_ENCODING_QUICKLIST) &#123;</span><br><span class="line">        </span><br><span class="line">        <span class="keyword">long</span> <span class="keyword">long</span> vlong;</span><br><span class="line">        <span class="comment">// 设置值弹出的位置</span></span><br><span class="line">        <span class="keyword">int</span> ql_where = where == LIST_HEAD ? QUICKLIST_HEAD : QUICKLIST_TAIL;</span><br><span class="line">        <span class="comment">// 调用quicklistPopCustom函数弹出元素</span></span><br><span class="line">        <span class="keyword">if</span> (quicklistPopCustom(subject-&gt;ptr, ql_where, (<span class="keyword">unsigned</span> <span class="keyword">char</span> **)&amp;value,</span><br><span class="line">                               <span class="literal">NULL</span>, &amp;vlong, listPopSaver)) &#123;</span><br><span class="line">            <span class="comment">// 如果弹出的元素是整数，则创建一个新的字符串对象来保存这个整数</span></span><br><span class="line">            <span class="keyword">if</span> (!value)</span><br><span class="line">                value = createStringObjectFromLongLong(vlong);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (subject-&gt;encoding == OBJ_ENCODING_LISTPACK) &#123;</span><br><span class="line">        <span class="comment">// 如果列表对象的编码方式是LISTPACK</span></span><br><span class="line">        <span class="keyword">unsigned</span> <span class="keyword">char</span> *p;</span><br><span class="line">        <span class="keyword">unsigned</span> <span class="keyword">char</span> *vstr;</span><br><span class="line">        <span class="keyword">int64_t</span> vlen;</span><br><span class="line">        <span class="keyword">unsigned</span> <span class="keyword">char</span> intbuf[LP_INTBUF_SIZE];</span><br><span class="line">        <span class="comment">// 获取LISTPACK的头部或尾部元素的指针</span></span><br><span class="line">        p = (where == LIST_HEAD) ? lpFirst(subject-&gt;ptr) : lpLast(subject-&gt;ptr);</span><br><span class="line">        <span class="keyword">if</span> (p) &#123;</span><br><span class="line">            <span class="comment">// 获取元素的值和长度</span></span><br><span class="line">            vstr = lpGet(p, &amp;vlen, intbuf);</span><br><span class="line">            <span class="comment">// 创建一个新的字符串对象来保存这个元素</span></span><br><span class="line">            value = createStringObject((<span class="keyword">char</span>*)vstr, vlen);</span><br><span class="line">            <span class="comment">// 从LISTPACK中删除这个元素</span></span><br><span class="line">            subject-&gt;ptr = lpDelete(subject-&gt;ptr, p, <span class="literal">NULL</span>);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        serverPanic(<span class="string">&quot;Unknown list encoding&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">return</span> value;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; blpopCommand -&gt; blockingPopGenericCommand -&gt; listTypePop -&gt; quicklistPopCustom:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* pop from quicklist and return result in &#x27;data&#x27; ptr.  Value of &#x27;data&#x27;</span></span><br><span class="line"><span class="comment"> * is the return value of &#x27;saver&#x27; function pointer if the data is NOT a number.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * If the quicklist element is a long long, then the return value is returned in</span></span><br><span class="line"><span class="comment"> * &#x27;sval&#x27;.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Return value of 0 means no elements available.</span></span><br><span class="line"><span class="comment"> * Return value of 1 means check &#x27;data&#x27; and &#x27;sval&#x27; for values.</span></span><br><span class="line"><span class="comment"> * If &#x27;data&#x27; is set, use &#x27;data&#x27; and &#x27;sz&#x27;.  Otherwise, use &#x27;sval&#x27;. */</span></span><br><span class="line"><span class="comment">// </span></span><br><span class="line"><span class="comment">// quicklistPopCustom函数用于从quicklist中弹出一个元素。</span></span><br><span class="line"><span class="comment">// quicklist参数是要操作的quicklist，where参数指定弹出元素的位置（头部或尾部）。</span></span><br><span class="line"><span class="comment">// data参数用于接收弹出的元素值，sz参数用于接收元素值的长度，sval参数用于接收元素值（如果元素值是一个长整数）。</span></span><br><span class="line"><span class="comment">// saver参数是一个函数指针，用于保存弹出的元素值。(blpop场景下使用的listPopSaver函数)</span></span><br><span class="line"><span class="comment">// 函数返回0表示quicklist中没有元素，返回1表示弹出元素成功。</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">quicklistPopCustom</span><span class="params">(quicklist *quicklist, <span class="keyword">int</span> where, <span class="keyword">unsigned</span> <span class="keyword">char</span> **data,</span></span></span><br><span class="line"><span class="function"><span class="params">                       <span class="keyword">size_t</span> *sz, <span class="keyword">long</span> <span class="keyword">long</span> *sval,</span></span></span><br><span class="line"><span class="function"><span class="params">                       <span class="keyword">void</span> *(*saver)(<span class="keyword">unsigned</span> <span class="keyword">char</span> *data, <span class="keyword">size_t</span> sz))</span> </span>&#123;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> *p;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> *vstr;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">int</span> vlen;</span><br><span class="line">    <span class="keyword">long</span> <span class="keyword">long</span> vlong;</span><br><span class="line">    <span class="comment">// pos变量用于指定在节点中查找元素的位置</span></span><br><span class="line">    <span class="keyword">int</span> pos = (where == QUICKLIST_HEAD) ? <span class="number">0</span> : <span class="number">-1</span>;</span><br><span class="line">    <span class="comment">// 如果quicklist中没有元素，直接返回0</span></span><br><span class="line">    <span class="keyword">if</span> (quicklist-&gt;count == <span class="number">0</span>)</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    <span class="comment">// </span></span><br><span class="line">    <span class="keyword">if</span> (data)</span><br><span class="line">        *data = <span class="literal">NULL</span>;</span><br><span class="line">    <span class="keyword">if</span> (sz)</span><br><span class="line">        *sz = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">if</span> (sval)</span><br><span class="line">        *sval = <span class="number">-123456789</span>;</span><br><span class="line"></span><br><span class="line">    quicklistNode *node;</span><br><span class="line">    <span class="comment">// 根据where参数决定从quicklist的头部还是尾部弹出元素</span></span><br><span class="line">    <span class="keyword">if</span> (where == QUICKLIST_HEAD &amp;&amp; quicklist-&gt;head) &#123;</span><br><span class="line">        node = quicklist-&gt;head;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (where == QUICKLIST_TAIL &amp;&amp; quicklist-&gt;tail) &#123;</span><br><span class="line">        node = quicklist-&gt;tail;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* The head and tail should never be compressed */</span></span><br><span class="line">    <span class="comment">// 确保头部和尾部的节点不是压缩的</span></span><br><span class="line">    assert(node-&gt;encoding != QUICKLIST_NODE_ENCODING_LZF);</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果节点是普通的（未压缩的），直接保存节点的值</span></span><br><span class="line">    <span class="keyword">if</span> (unlikely(QL_NODE_IS_PLAIN(node))) &#123;</span><br><span class="line">        <span class="keyword">if</span> (data)</span><br><span class="line">            <span class="comment">// 详见listPopSaver</span></span><br><span class="line">            *data = saver(node-&gt;entry, node-&gt;sz);</span><br><span class="line">        <span class="keyword">if</span> (sz)</span><br><span class="line">            *sz = node-&gt;sz;</span><br><span class="line">        <span class="comment">// 从quicklist中删除节点</span></span><br><span class="line">        quicklistDelIndex(quicklist, node, <span class="literal">NULL</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 如果节点是压缩的，先解压缩节点，然后保存节点的值</span></span><br><span class="line">    p = lpSeek(node-&gt;entry, pos);</span><br><span class="line">    vstr = lpGetValue(p, &amp;vlen, &amp;vlong);</span><br><span class="line">    <span class="keyword">if</span> (vstr) &#123;</span><br><span class="line">        <span class="keyword">if</span> (data)</span><br><span class="line">            *data = saver(vstr, vlen);</span><br><span class="line">        <span class="keyword">if</span> (sz)</span><br><span class="line">            *sz = vlen;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">if</span> (data)</span><br><span class="line">            *data = <span class="literal">NULL</span>;</span><br><span class="line">        <span class="keyword">if</span> (sval)</span><br><span class="line">            *sval = vlong;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 从quicklist中删除节点</span></span><br><span class="line">    quicklistDelIndex(quicklist, node, &amp;p);</span><br><span class="line">    <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; blpopCommand -&gt; blockingPopGenericCommand -&gt; listTypePop -&gt; quicklistPopCustom -&gt; listPopSaver(saver函数指针) -&gt; createStringObject:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> *<span class="title">listPopSaver</span><span class="params">(<span class="keyword">unsigned</span> <span class="keyword">char</span> *data, <span class="keyword">size_t</span> sz)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">return</span> createStringObject((<span class="keyword">char</span>*)data,sz);</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="comment">/* Create a string object with EMBSTR encoding if it is smaller than</span></span><br><span class="line"><span class="comment"> * OBJ_ENCODING_EMBSTR_SIZE_LIMIT, otherwise the RAW encoding is</span></span><br><span class="line"><span class="comment"> * used.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * The current limit of 44 is chosen so that the biggest string object</span></span><br><span class="line"><span class="comment"> * we allocate as EMBSTR will still fit into the 64 byte arena of jemalloc. */</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> OBJ_ENCODING_EMBSTR_SIZE_LIMIT 44</span></span><br><span class="line"><span class="function">robj *<span class="title">createStringObject</span><span class="params">(<span class="keyword">const</span> <span class="keyword">char</span> *ptr, <span class="keyword">size_t</span> len)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">if</span> (len &lt;= OBJ_ENCODING_EMBSTR_SIZE_LIMIT)</span><br><span class="line">        <span class="comment">// 嵌入式字符串，之前已经在set中写过，不再重复解析里面的代码</span></span><br><span class="line">        <span class="keyword">return</span> createEmbeddedStringObject(ptr,len);</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">        <span class="comment">// 创建一个字符串对象</span></span><br><span class="line">        <span class="keyword">return</span> createRawStringObject(ptr,len);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; blpopCommand -&gt; blockingPopGenericCommand -&gt; listTypePop -&gt; lpDelete:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"></span><br><span class="line"><span class="comment">/* Remove the element pointed by &#x27;p&#x27;, and return the resulting listpack.</span></span><br><span class="line"><span class="comment"> * If &#x27;newp&#x27; is not NULL, the next element pointer (to the right of the</span></span><br><span class="line"><span class="comment"> * deleted one) is returned by reference. If the deleted element was the</span></span><br><span class="line"><span class="comment"> * last one, &#x27;*newp&#x27; is set to NULL. */</span></span><br><span class="line"><span class="function"><span class="keyword">unsigned</span> <span class="keyword">char</span> *<span class="title">lpDelete</span><span class="params">(<span class="keyword">unsigned</span> <span class="keyword">char</span> *lp, <span class="keyword">unsigned</span> <span class="keyword">char</span> *p, <span class="keyword">unsigned</span> <span class="keyword">char</span> **newp)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 在原位置将其置空</span></span><br><span class="line">    <span class="keyword">return</span> lpInsert(lp,<span class="literal">NULL</span>,<span class="literal">NULL</span>,<span class="number">0</span>,p,LP_REPLACE,newp);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; blpopCommand -&gt; blockingPopGenericCommand -&gt; blockForKeys:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Set a client in blocking mode for the specified key, with the specified timeout.</span></span><br><span class="line"><span class="comment"> * The &#x27;type&#x27; argument is BLOCKED_LIST,BLOCKED_ZSET or BLOCKED_STREAM depending on the kind of operation we are</span></span><br><span class="line"><span class="comment"> * waiting for an empty key in order to awake the client. The client is blocked</span></span><br><span class="line"><span class="comment"> * for all the &#x27;numkeys&#x27; keys as in the &#x27;keys&#x27; argument.</span></span><br><span class="line"><span class="comment"> * The client will unblocked as soon as one of the keys in &#x27;keys&#x27; value was updated.</span></span><br><span class="line"><span class="comment"> * the parameter unblock_on_nokey can be used to force client to be unblocked even in the case the key</span></span><br><span class="line"><span class="comment"> * is updated to become unavailable, either by type change (override), deletion or swapdb */</span></span><br><span class="line"><span class="comment">// blockForKeys函数用于将客户端设置为对指定键进行阻塞模式，直到超时或者其中一个键的值被更新。</span></span><br><span class="line"><span class="comment">// c参数指定要设置阻塞模式的客户端，btype参数指定阻塞的类型（列表、有序集合或流），</span></span><br><span class="line"><span class="comment">// keys参数指定要阻塞的键，numkeys参数指定键的数量，timeout参数指定超时时间，</span></span><br><span class="line"><span class="comment">// unblock_on_nokey参数指定当键不存在时是否解除阻塞。</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">blockForKeys</span><span class="params">(client *c, <span class="keyword">int</span> btype, robj **keys, <span class="keyword">int</span> numkeys, <span class="keyword">mstime_t</span> timeout, <span class="keyword">int</span> unblock_on_nokey)</span> </span>&#123;</span><br><span class="line">    dictEntry *db_blocked_entry, *db_blocked_existing_entry, *client_blocked_entry;</span><br><span class="line">    <span class="built_in">list</span> *l;</span><br><span class="line">    <span class="keyword">int</span> j;</span><br><span class="line">    <span class="comment">// 设置客户端的超时时间</span></span><br><span class="line">    c-&gt;bstate.timeout = timeout;</span><br><span class="line">    <span class="keyword">for</span> (j = <span class="number">0</span>; j &lt; numkeys; j++) &#123;</span><br><span class="line">        <span class="comment">/* If the key already exists in the dictionary ignore it. */</span></span><br><span class="line">        <span class="comment">// 如果key已经在c-&gt;bstate.keys中则直接跳过</span></span><br><span class="line">        <span class="keyword">if</span> (!(client_blocked_entry = dictAddRaw(c-&gt;bstate.keys,keys[j],<span class="literal">NULL</span>))) &#123;</span><br><span class="line">            <span class="keyword">continue</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 增加key的引用计数</span></span><br><span class="line">        incrRefCount(keys[j]);</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* And in the other &quot;side&quot;, to map keys -&gt; clients */</span></span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         * c-&gt;bstate.keys 与 c-&gt;db-&gt;blocking_keys 是两个不同的数据结构，分别用于不同的目的。</span></span><br><span class="line"><span class="comment">         * c-&gt;bstate.keys 是客户端（client）对象的一部分，用于存储当前被阻塞的客户端所等待的键。</span></span><br><span class="line"><span class="comment">         * 每个客户端都有一个自己的 bstate.keys 字典，用于跟踪客户端自己的阻塞状态。</span></span><br><span class="line"><span class="comment">         * c-&gt;db-&gt;blocking_keys 是数据库（database）对象的一部分，用于存储所有被阻塞的客户端按键进行索引。</span></span><br><span class="line"><span class="comment">         * 这个字典的键是被阻塞的键，值是一个链表，链表中的每一项都是一个等待该键的被阻塞的客户端。</span></span><br><span class="line"><span class="comment">         * 这样设计的原因是，当一个键的值被更新时，Redis需要快速找到所有等待这个键的客户端，然后将它们唤醒。所以，</span></span><br><span class="line"><span class="comment">         * Redis在数据库对象中维护了一个 blocking_keys 字典，使得能够通过键快速找到所有被阻塞的客户端。</span></span><br><span class="line"><span class="comment">         * 同时，每个客户端也需要知道自己正在等待哪些键，这样当键的值被更新或者客户端被其他原因（如超时）唤醒时，</span></span><br><span class="line"><span class="comment">         * 客户端能够知道自己的阻塞状态。因此，每个客户端对象中也维护了一个 bstate.keys 字典，用于跟踪自己的阻塞状态。</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        db_blocked_entry = dictAddRaw(c-&gt;db-&gt;blocking_keys,keys[j], &amp;db_blocked_existing_entry);</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* In case key[j] did not have blocking clients yet, we need to create a new list */</span></span><br><span class="line">        <span class="keyword">if</span> (db_blocked_entry != <span class="literal">NULL</span>) &#123;</span><br><span class="line">            <span class="comment">// 如果db_blocked_entry不为空，证明keys是新增的，这将会创建一个list</span></span><br><span class="line">            l = listCreate();</span><br><span class="line">            <span class="comment">// 将对应的entry放入blocking_keys中</span></span><br><span class="line">            dictSetVal(c-&gt;db-&gt;blocking_keys, db_blocked_entry, l);</span><br><span class="line">            <span class="comment">// 增加key的引用</span></span><br><span class="line">            incrRefCount(keys[j]);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">// 获取已有的list</span></span><br><span class="line">            l = dictGetVal(db_blocked_existing_entry);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 将当前的client加入到list当中</span></span><br><span class="line">        listAddNodeTail(l,c);</span><br><span class="line">        dictSetVal(c-&gt;bstate.keys,client_blocked_entry,listLast(l));</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">        <span class="comment">/* We need to add the key to blocking_keys_unblock_on_nokey, if the client</span></span><br><span class="line"><span class="comment">         * wants to be awakened if key is deleted (like XREADGROUP) */</span></span><br><span class="line">        <span class="comment">// 如果客户端希望在键被删除时被唤醒（如XREADGROUP命令），我们需要将键添加到blocking_keys_unblock_on_nokey */</span></span><br><span class="line">        <span class="keyword">if</span> (unblock_on_nokey) &#123;</span><br><span class="line">            <span class="comment">// db_blocked_entry中的value存储的是需要唤醒的client数</span></span><br><span class="line">            db_blocked_entry = dictAddRaw(c-&gt;db-&gt;blocking_keys_unblock_on_nokey, keys[j], &amp;db_blocked_existing_entry);</span><br><span class="line">            <span class="keyword">if</span> (db_blocked_entry) &#123;</span><br><span class="line">                incrRefCount(keys[j]);</span><br><span class="line">                dictSetUnsignedIntegerVal(db_blocked_entry, <span class="number">1</span>);</span><br><span class="line">            &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">                dictIncrUnsignedIntegerVal(db_blocked_existing_entry, <span class="number">1</span>);</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 将客户端的是否键不存在就唤醒进行设置</span></span><br><span class="line">    c-&gt;bstate.unblock_on_nokey = unblock_on_nokey;</span><br><span class="line">    <span class="comment">/* Currently we assume key blocking will require reprocessing the command.</span></span><br><span class="line"><span class="comment">     * However in case of modules, they have a different way to handle the reprocessing</span></span><br><span class="line"><span class="comment">     * which does not require setting the pending command flag */</span></span><br><span class="line">    <span class="keyword">if</span> (btype != BLOCKED_MODULE)</span><br><span class="line">        c-&gt;flags |= CLIENT_PENDING_COMMAND;</span><br><span class="line">    blockClient(c,btype); <span class="comment">// 阻塞客户端</span></span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>-&gt; blpopCommand -&gt; blockingPopGenericCommand -&gt; blockForKeys -&gt; blockClient:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Block a client for the specific operation type. Once the CLIENT_BLOCKED</span></span><br><span class="line"><span class="comment"> * flag is set client query buffer is not longer processed, but accumulated,</span></span><br><span class="line"><span class="comment"> * and will be processed when the client is unblocked. */</span></span><br><span class="line"><span class="comment">// blockClient函数用于将客户端c阻塞并设置阻塞类型为btype（这个场景下为BLOCKED_LIST）。</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">blockClient</span><span class="params">(client *c, <span class="keyword">int</span> btype)</span> </span>&#123;</span><br><span class="line">    <span class="comment">/* Master client should never be blocked unless pause or module */</span></span><br><span class="line">    serverAssert(!(c-&gt;flags &amp; CLIENT_MASTER &amp;&amp;</span><br><span class="line">                   btype != BLOCKED_MODULE &amp;&amp;</span><br><span class="line">                   btype != BLOCKED_POSTPONE));</span><br><span class="line"></span><br><span class="line">    <span class="comment">// 设置客户端c的阻塞标志。</span></span><br><span class="line">    c-&gt;flags |= CLIENT_BLOCKED;</span><br><span class="line">    <span class="comment">// 设置客户端c的阻塞类型为btype。</span></span><br><span class="line">    c-&gt;bstate.btype = btype;</span><br><span class="line">    <span class="comment">// 如果客户端不是模块客户端，增加服务器的阻塞客户端数。</span></span><br><span class="line">    <span class="keyword">if</span> (!(c-&gt;flags &amp; CLIENT_MODULE)) server.blocked_clients++; <span class="comment">/* We count blocked client stats on regular clients and not on module clients */</span></span><br><span class="line">    <span class="comment">// 增加服务器对应阻塞类型的阻塞客户端数。</span></span><br><span class="line">    server.blocked_clients_by_type[btype]++;</span><br><span class="line">    <span class="comment">// 将客户端c添加到超时表中。</span></span><br><span class="line">    addClientToTimeoutTable(c);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2023/09/22/redis/redis_blpop/" title="源码阅读(五)-Redis中的BLPOP命令">https://nytech3.github.io/2023/09/22/redis/redis_blpop/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/c/" rel="tag"># c</a>
+              <a href="/tags/redis/" rel="tag"># redis</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/09/19/redis/redis_lpush/" rel="prev" title="源码阅读(四)-Redis中的LPUSH命令">
+      <i class="fa fa-chevron-left"></i> 源码阅读(四)-Redis中的LPUSH命令
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2023/09/23/redis/redis_sadd/" rel="next" title="源码阅读(六)-Redis中的SADD命令">
+      源码阅读(六)-Redis中的SADD命令 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90"><span class="nav-number">1.</span> <span class="nav-text">源码解析</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#BLPOP-json"><span class="nav-number">1.1.</span> <span class="nav-text">BLPOP json</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">1.2.</span> <span class="nav-text">代码分析</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

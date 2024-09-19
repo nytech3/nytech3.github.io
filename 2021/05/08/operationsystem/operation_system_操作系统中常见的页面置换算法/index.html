@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="文章推荐: 页面置换算法  常见的页面置换算法有以下几种: OPT页面置换算法(最佳页面置换算法)基本思路当一个缺页中断发生时，对于保存在内存中的每一个逻辑页面，计算在它在下一次的访问之间的等待时间，从中选择等待时间最长的那个，作为被置换的页面。这种思路是最理想的情况，但事实上，一个操作系统并无法知道每一个页面下一次被访问的时机。虽然这种算法无法被实现，但是可以作为一种度量，如果有一种算法其效">
+<meta property="og:type" content="article">
+<meta property="og:title" content="操作系统_操作系统中常见的页面置换算法">
+<meta property="og:url" content="https://nytech3.github.io/2021/05/08/operationsystem/operation_system_%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E4%B8%AD%E5%B8%B8%E8%A7%81%E7%9A%84%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="文章推荐: 页面置换算法  常见的页面置换算法有以下几种: OPT页面置换算法(最佳页面置换算法)基本思路当一个缺页中断发生时，对于保存在内存中的每一个逻辑页面，计算在它在下一次的访问之间的等待时间，从中选择等待时间最长的那个，作为被置换的页面。这种思路是最理想的情况，但事实上，一个操作系统并无法知道每一个页面下一次被访问的时机。虽然这种算法无法被实现，但是可以作为一种度量，如果有一种算法其效">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2021-05-08T10:11:25.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:56.998Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="操作系统">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/2021/05/08/operationsystem/operation_system_%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E4%B8%AD%E5%B8%B8%E8%A7%81%E7%9A%84%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>操作系统_操作系统中常见的页面置换算法 | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2021/05/08/operationsystem/operation_system_%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E4%B8%AD%E5%B8%B8%E8%A7%81%E7%9A%84%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          操作系统_操作系统中常见的页面置换算法
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-05-08 18:11:25" itemprop="dateCreated datePublished" datetime="2021-05-08T18:11:25+08:00">2021-05-08</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2021/05/08/operationsystem/operation_system_%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E4%B8%AD%E5%B8%B8%E8%A7%81%E7%9A%84%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95/" class="post-meta-item leancloud_visitors" data-flag-title="操作系统_操作系统中常见的页面置换算法" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<blockquote>
+<p>文章推荐: <a target="_blank" rel="noopener" href="https://www.cnblogs.com/wingsless/p/12295246.html">页面置换算法</a></p>
+</blockquote>
+<p>常见的页面置换算法有以下几种:</p>
+<h2 id="OPT页面置换算法-最佳页面置换算法"><a href="#OPT页面置换算法-最佳页面置换算法" class="headerlink" title="OPT页面置换算法(最佳页面置换算法)"></a>OPT页面置换算法(最佳页面置换算法)</h2><h3 id="基本思路"><a href="#基本思路" class="headerlink" title="基本思路"></a>基本思路</h3><p>当一个缺页中断发生时，对于保存在内存中的每一个逻辑页面，计算在它在下一次的访问之间的等待时间，从中选择等待时间最长的那个，作为被置换的页面。<br>这种思路是最理想的情况，但事实上，一个操作系统并无法知道每一个页面下一次被访问的时机。虽然这种算法无法被实现，但是可以作为一种度量，如果有一种算法其效率最接近OPT，那么这种算法无疑是优秀的算法。</p>
+<span id="more"></span>
+<h3 id="算法举例"><a href="#算法举例" class="headerlink" title="算法举例"></a>算法举例</h3><p>已知有<code>0，1，2，3，4，5，6，7，8，9</code>十个页面，其使用顺序为<code>9-&gt;0-&gt;2-&gt;2-&gt;3-&gt;1-&gt;7-&gt;4-&gt;7-&gt;9-&gt;1</code>，且系统为进程仅分配了3个页面大小的物理内存，这时其物理内存的置换情况如下:</p>
+<ol>
+<li><code>9&lt;-</code> :  <code>9 &lt;-</code></li>
+<li><code>0&lt;-</code> :  <code>9 &lt;- 0 &lt;-</code></li>
+<li><code>2&lt;-</code> :  <code>9 &lt;- 0 &lt;- 2 &lt;-</code></li>
+<li><code>2&lt;-</code> :  <code>9 &lt;- 0 &lt;- 2 &lt;-</code></li>
+<li><code>3&lt;-</code> :  <code>9 &lt;- 3 &lt;- 2 &lt;-</code></li>
+<li><code>1&lt;-</code> :  <code>9 &lt;- 1 &lt;- 2 &lt;-</code></li>
+<li><code>7&lt;-</code> :  <code>9 &lt;- 1 &lt;- 7 &lt;-</code></li>
+<li><code>4&lt;-</code> :  <code>9 &lt;- 4 &lt;- 7 &lt;-</code></li>
+<li><code>7&lt;-</code> :  <code>9 &lt;- 4 &lt;- 7 &lt;-</code></li>
+<li><code>9&lt;-</code> : <code>9 &lt;- 4 &lt;- 7 &lt;- </code></li>
+<li><code>1&lt;-</code> : <code>1 &lt;- 4 &lt;- 7 &lt;-</code></li>
+</ol>
+<p>代码示例</p>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> os;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> java.util.ArrayList;</span><br><span class="line"><span class="keyword">import</span> java.util.HashMap;</span><br><span class="line"><span class="keyword">import</span> java.util.List;</span><br><span class="line"><span class="keyword">import</span> java.util.Map;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryPage</span></span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;OPT:&quot;</span>);</span><br><span class="line">        opt();</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">static</span> List&lt;Integer&gt; pageList = <span class="keyword">new</span> ArrayList&lt;&gt;();</span><br><span class="line">    <span class="keyword">static</span>&#123;</span><br><span class="line">        pageList.add(<span class="number">9</span>);</span><br><span class="line">        pageList.add(<span class="number">0</span>);</span><br><span class="line">        pageList.add(<span class="number">2</span>);</span><br><span class="line">        pageList.add(<span class="number">2</span>);</span><br><span class="line">        pageList.add(<span class="number">3</span>);</span><br><span class="line">        pageList.add(<span class="number">1</span>);</span><br><span class="line">        pageList.add(<span class="number">7</span>);</span><br><span class="line">        pageList.add(<span class="number">4</span>);</span><br><span class="line">        pageList.add(<span class="number">7</span>);</span><br><span class="line">        pageList.add(<span class="number">9</span>);</span><br><span class="line">        pageList.add(<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">opt</span><span class="params">()</span></span>&#123;</span><br><span class="line"></span><br><span class="line">        <span class="comment">/**</span></span><br><span class="line"><span class="comment">         * 可改进成Map&lt;Integer,Queue&lt;Integer&gt;&gt;</span></span><br><span class="line"><span class="comment">         */</span></span><br><span class="line">        Map&lt;Integer,List&lt;Integer&gt;&gt; indexRecordMap = <span class="keyword">new</span> HashMap&lt;&gt;();</span><br><span class="line">        <span class="keyword">for</span>(<span class="keyword">int</span> i = <span class="number">0</span> ; i &lt; pageList.size() ; i++)&#123;</span><br><span class="line">            indexRecordMap.putIfAbsent(pageList.get(i), <span class="keyword">new</span> ArrayList&lt;&gt;());</span><br><span class="line">            indexRecordMap.get(pageList.get(i)).add(i);</span><br><span class="line"></span><br><span class="line">        &#125;</span><br><span class="line">        List&lt;Integer&gt; contains = <span class="keyword">new</span> ArrayList&lt;&gt;(<span class="number">3</span>);</span><br><span class="line">        <span class="keyword">for</span>(<span class="keyword">int</span> i = <span class="number">0</span> ; i &lt; pageList.size() ; i++)&#123;</span><br><span class="line">            <span class="keyword">if</span>(contains.size()&lt;<span class="number">3</span>)&#123;</span><br><span class="line">                contains.add(pageList.get(i));</span><br><span class="line">                System.out.print(i + <span class="string">&quot; :  &quot;</span>);</span><br><span class="line">                <span class="keyword">for</span>(Integer value:contains)&#123;</span><br><span class="line">                    System.out.print(value + <span class="string">&quot; &lt;- &quot;</span>);</span><br><span class="line">                &#125;</span><br><span class="line">                System.out.println();</span><br><span class="line">            &#125;<span class="keyword">else</span>&#123;</span><br><span class="line">                Boolean paas = <span class="keyword">false</span>;</span><br><span class="line">                <span class="keyword">for</span> (<span class="keyword">int</span> j = <span class="number">0</span>; j &lt; contains.size(); j++) &#123;</span><br><span class="line">                    <span class="keyword">if</span>(contains.get(j)==pageList.get(i))&#123;</span><br><span class="line">                        paas = <span class="keyword">true</span>;</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">if</span>(paas)&#123;</span><br><span class="line">                System.out.print(i + <span class="string">&quot; :  &quot;</span>);</span><br><span class="line">                <span class="keyword">for</span>(Integer value:contains)&#123;</span><br><span class="line">                        System.out.print(value + <span class="string">&quot; &lt;- &quot;</span>);</span><br><span class="line">                    &#125;</span><br><span class="line">                    System.out.println();</span><br><span class="line">                    <span class="keyword">continue</span>;</span><br><span class="line">                &#125;</span><br><span class="line">                Integer replaceIndex = <span class="keyword">null</span>;</span><br><span class="line">                Integer leastFrequentlyUsedIndex = <span class="keyword">null</span>;</span><br><span class="line">                <span class="keyword">for</span> (<span class="keyword">int</span> j = <span class="number">0</span>; j &lt; contains.size(); j++) &#123;</span><br><span class="line">                    Boolean isHaveNextUsed = <span class="keyword">false</span>;</span><br><span class="line">                    <span class="keyword">for</span> (<span class="keyword">int</span> j2 = <span class="number">0</span>; j2 &lt; indexRecordMap.get(contains.get(j)).size(); j2++) &#123;</span><br><span class="line">                        <span class="keyword">if</span>(indexRecordMap.get(contains.get(j)).get(j2)&gt;i )&#123;</span><br><span class="line">                            isHaveNextUsed =<span class="keyword">true</span>;</span><br><span class="line">                            <span class="keyword">if</span>(leastFrequentlyUsedIndex == <span class="keyword">null</span> || leastFrequentlyUsedIndex &lt; indexRecordMap.get(contains.get(j)).get(j2))&#123;</span><br><span class="line">                                leastFrequentlyUsedIndex = indexRecordMap.get(contains.get(j)).get(j2);</span><br><span class="line">                                replaceIndex = j;</span><br><span class="line">                            &#125;</span><br><span class="line">                            <span class="keyword">break</span>;</span><br><span class="line">                        &#125;</span><br><span class="line">                    &#125;</span><br><span class="line">                    <span class="keyword">if</span>(!isHaveNextUsed)&#123;</span><br><span class="line">                        leastFrequentlyUsedIndex = <span class="keyword">null</span>;</span><br><span class="line">                        replaceIndex = j;</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">                contains.set(replaceIndex,pageList.get(i));</span><br><span class="line">                System.out.print(i + <span class="string">&quot; :  &quot;</span>);</span><br><span class="line">                <span class="keyword">for</span>(Integer value:contains)&#123;</span><br><span class="line">                    System.out.print(value + <span class="string">&quot; &lt;- &quot;</span>);</span><br><span class="line">                &#125;</span><br><span class="line">                System.out.println();</span><br><span class="line">            &#125;</span><br><span class="line">        &#125;          </span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+
+
+
+<h2 id="先进先出算法（first-in-first-out-，FIFO-）"><a href="#先进先出算法（first-in-first-out-，FIFO-）" class="headerlink" title="先进先出算法（first-in first-out ，FIFO ）"></a>先进先出算法（first-in first-out ，FIFO ）</h2><p>将最早装载至内存中进入队列的页面置换</p>
+<p>缺点:</p>
+<ol>
+<li>会将经常使用的页面置换出来</li>
+<li>进程分配物理页面数增加时 缺页不一定减少(Belady 现象) </li>
+</ol>
+<h3 id="Belady-现象"><a href="#Belady-现象" class="headerlink" title="Belady 现象"></a>Belady 现象</h3><p>采用 FIFO 等算法时 可能出现分配的物理页面数增加 缺页次数反而升高的异常现象</p>
+<h3 id="产生-Belady-现象的原因"><a href="#产生-Belady-现象的原因" class="headerlink" title="产生 Belady 现象的原因"></a>产生 Belady 现象的原因</h3><p>FIFO 算法的置换特征 与 进程访问内存的动态特征矛盾<br>被它置换出去的页面 并不一定是 进程 近期不会访问的页面</p>
+<h2 id="最近最久未使用算法（least-recently-used，-LRU-）"><a href="#最近最久未使用算法（least-recently-used，-LRU-）" class="headerlink" title="最近最久未使用算法（least recently used， LRU ）"></a>最近最久未使用算法（least recently used， LRU ）</h2><p>LRU认为某些页面长时间未被访问 则它们在将来还可能会长时间不会访问，故其选择最长时间没有被引用的页面进行置换。缺页时LRU计算内存中每个逻辑页面的上一次访问时间，选择上一次使用到当前时间最长的页面置换出去。</p>
+<p>实现:<br>系统维护一个按最近一次访问时间排序的链表,链表首节点是最近刚刚访问过的页面,链表尾节点是最久未使用的页面,访问内存时找到相应页面并将其移到链首,缺页时置换链表尾节点的页面.</p>
+<h2 id="时钟页面置换算法（Clock）"><a href="#时钟页面置换算法（Clock）" class="headerlink" title="时钟页面置换算法（Clock）"></a>时钟页面置换算法（Clock）</h2><p>时钟页面置换是一种最近未使用使用算法，其将内存中的页面像环形队列一样串接起来，通过指针轮转各个页（这个过程就像是时钟的指针的转动），通过各个页中的标识符，找到最近未使用的页面进行替换，页面中有两个标识符号,access和modify,access来表示最近被访问，modify用于表示最近被修改，access为1时被认为最近被访问了，modify为1时被认为是最近被修改。  </p>
+<ol>
+<li>指针轮转到access位为1的页面时，将该页的access位置为0，表示时钟在轮转过所有页面之后该页最近仍未被使用过。</li>
+<li>若指针再轮转一周之后，该页仍未被使用，则再检查modify是否为0，若为1,则将modify置为0，指针继续轮转，不进行页面置换，这里的目的是当页面被修改时需要将页面写回磁盘，频繁的写操作需要耗费大量资源。当modify为0时，则将页面置换。</li>
+<li>若使用的页面已在内存中存在，则将该页面的access位置为1，若该页面被修改则将modify同时置为1，同时将该页面移动至指针之后。</li>
+</ol>
+<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br><span class="line">79</span><br><span class="line">80</span><br><span class="line">81</span><br><span class="line">82</span><br><span class="line">83</span><br><span class="line">84</span><br><span class="line">85</span><br><span class="line">86</span><br><span class="line">87</span><br><span class="line">88</span><br><span class="line">89</span><br><span class="line">90</span><br><span class="line">91</span><br><span class="line">92</span><br><span class="line">93</span><br><span class="line">94</span><br><span class="line">95</span><br><span class="line">96</span><br><span class="line">97</span><br><span class="line">98</span><br><span class="line">99</span><br><span class="line">100</span><br><span class="line">101</span><br><span class="line">102</span><br><span class="line">103</span><br><span class="line">104</span><br><span class="line">105</span><br><span class="line">106</span><br><span class="line">107</span><br><span class="line">108</span><br><span class="line">109</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> os;</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> java.util.ArrayList;</span><br><span class="line"><span class="keyword">import</span> java.util.HashMap;</span><br><span class="line"><span class="keyword">import</span> java.util.List;</span><br><span class="line"><span class="keyword">import</span> java.util.Map;</span><br><span class="line"></span><br><span class="line"><span class="keyword">public</span> <span class="class"><span class="keyword">class</span> <span class="title">MemoryPage</span></span>&#123;</span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">main</span><span class="params">(String[] args)</span> </span>&#123;</span><br><span class="line">        System.out.println(<span class="string">&quot;CLOCK:&quot;</span>);</span><br><span class="line">        clock();</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="keyword">static</span> List&lt;Integer&gt; pageList = <span class="keyword">new</span> ArrayList&lt;&gt;();</span><br><span class="line">    <span class="keyword">static</span>&#123;</span><br><span class="line">        pageList.add(<span class="number">9</span>);</span><br><span class="line">        pageList.add(<span class="number">0</span>);</span><br><span class="line">        pageList.add(<span class="number">2</span>);</span><br><span class="line">        pageList.add(<span class="number">2</span>);</span><br><span class="line">        pageList.add(<span class="number">3</span>);</span><br><span class="line">        pageList.add(<span class="number">1</span>);</span><br><span class="line">        pageList.add(<span class="number">7</span>);</span><br><span class="line">        pageList.add(<span class="number">4</span>);</span><br><span class="line">        pageList.add(<span class="number">7</span>);</span><br><span class="line">        pageList.add(<span class="number">9</span>);</span><br><span class="line">        pageList.add(<span class="number">1</span>);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">private</span> <span class="keyword">static</span> <span class="class"><span class="keyword">class</span> <span class="title">PageUnit</span></span>&#123;</span><br><span class="line">        <span class="keyword">public</span> Integer pageNum;</span><br><span class="line">        <span class="keyword">public</span> Integer access;</span><br><span class="line">        <span class="keyword">public</span> Integer modify;</span><br><span class="line">        <span class="function"><span class="keyword">public</span> <span class="title">PageUnit</span><span class="params">(Integer pageNum,Integer access,Integer modify)</span></span>&#123;</span><br><span class="line">            <span class="keyword">this</span>.pageNum = pageNum;</span><br><span class="line">            <span class="keyword">this</span>.access = access;</span><br><span class="line">            <span class="keyword">this</span>.modify = pageNum;</span><br><span class="line">        &#125;</span><br><span class="line"></span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">clock</span><span class="params">()</span></span>&#123;</span><br><span class="line">        List&lt;PageUnit&gt; contains = <span class="keyword">new</span> ArrayList&lt;&gt;(<span class="number">3</span>);</span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">0</span>; i &lt; pageList.size(); i++) &#123;</span><br><span class="line">            Integer modify = <span class="number">0</span>;</span><br><span class="line">            <span class="comment">/**</span></span><br><span class="line"><span class="comment">             * 将偶数个的修改位置为0，奇数个的修改位置为1,即偶数个为读操作，奇数个为写操作</span></span><br><span class="line"><span class="comment">             */</span></span><br><span class="line">            <span class="keyword">if</span>((i+<span class="number">1</span>)%<span class="number">2</span>==<span class="number">0</span>)&#123;</span><br><span class="line">                modify = <span class="number">0</span>;</span><br><span class="line">            &#125;<span class="keyword">else</span>&#123;               </span><br><span class="line">                modify = <span class="number">1</span>;</span><br><span class="line">            &#125;</span><br><span class="line">            Integer point = <span class="number">0</span>;</span><br><span class="line">            <span class="comment">/**</span></span><br><span class="line"><span class="comment">             * 这里规定页容量为3</span></span><br><span class="line"><span class="comment">             */</span></span><br><span class="line">            <span class="keyword">if</span>(contains.size()&lt;<span class="number">3</span>)&#123;</span><br><span class="line">                contains.add(<span class="keyword">new</span> PageUnit(pageList.get(i), <span class="number">1</span>, <span class="number">1</span>));</span><br><span class="line">            &#125;<span class="keyword">else</span>&#123;</span><br><span class="line">                Boolean isExist = <span class="keyword">false</span>;</span><br><span class="line">                <span class="keyword">for</span> (<span class="keyword">int</span> j = <span class="number">0</span>; j &lt; contains.size(); j++) &#123;</span><br><span class="line">                    <span class="keyword">if</span>(contains.get(j).pageNum == pageList.get(i))&#123;</span><br><span class="line">                        contains.get(j).access = <span class="number">1</span>;</span><br><span class="line">                        contains.get(j).modify = modify;</span><br><span class="line">                        isExist = <span class="keyword">true</span>;</span><br><span class="line">                        <span class="keyword">if</span>(point == <span class="number">0</span>)&#123;</span><br><span class="line">                            behindPoint(contains,j,contains.size());                            </span><br><span class="line">                        &#125; <span class="keyword">else</span>&#123;</span><br><span class="line">                            behindPoint(contains,j,point);                            </span><br><span class="line">                        &#125;</span><br><span class="line">                        <span class="keyword">break</span>;</span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">                <span class="keyword">if</span>(!isExist)&#123;</span><br><span class="line">                    Integer replaceIndex = <span class="keyword">null</span>;</span><br><span class="line">                    <span class="keyword">while</span>(replaceIndex == <span class="keyword">null</span>)&#123;</span><br><span class="line">                        <span class="keyword">for</span> (<span class="keyword">int</span> j = point; j &lt; contains.size(); j++) &#123;</span><br><span class="line">                            point++;</span><br><span class="line">                            <span class="keyword">if</span>(point == contains.size())&#123;</span><br><span class="line">                                point = <span class="number">0</span>;</span><br><span class="line">                            &#125;</span><br><span class="line">                            <span class="keyword">if</span>(contains.get(j).access == <span class="number">1</span>)&#123;</span><br><span class="line">                                contains.get(j).access = <span class="number">0</span>;</span><br><span class="line">                            &#125;<span class="keyword">else</span> <span class="keyword">if</span>(contains.get(j).modify == <span class="number">1</span>)&#123;</span><br><span class="line">                                contains.get(j).modify = <span class="number">0</span>;</span><br><span class="line">                            &#125;<span class="keyword">else</span>&#123;</span><br><span class="line">                                replaceIndex = j;  </span><br><span class="line">                                <span class="keyword">break</span>;</span><br><span class="line">                            &#125;</span><br><span class="line">                        &#125;</span><br><span class="line">                    &#125;</span><br><span class="line">                    contains.set(replaceIndex, <span class="keyword">new</span> PageUnit(pageList.get(i), <span class="number">1</span>, modify));</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">            System.out.print(i + <span class="string">&quot; :  &quot;</span>);</span><br><span class="line">            <span class="keyword">for</span> (<span class="keyword">int</span> j = <span class="number">0</span>; j &lt; contains.size(); j++) &#123;</span><br><span class="line">                System.out.print(contains.get(j).pageNum + <span class="string">&quot; &lt;- &quot;</span>);</span><br><span class="line">            &#125;</span><br><span class="line">            System.out.println();</span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="function"><span class="keyword">public</span> <span class="keyword">static</span> <span class="keyword">void</span> <span class="title">behindPoint</span><span class="params">(List&lt;PageUnit&gt; datalist,Integer beReplacedIndex,Integer point)</span></span>&#123;</span><br><span class="line">        PageUnit temp = datalist.get(beReplacedIndex);</span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">int</span> i = beReplacedIndex; i &lt; point-<span class="number">1</span>; i++) &#123;</span><br><span class="line">            datalist.set(i, datalist.get(i+<span class="number">1</span>));            </span><br><span class="line">        &#125;</span><br><span class="line">        datalist.set(point-<span class="number">1</span>, temp);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+
+<h2 id="最不常用算法（least-frequently-used，LFU）"><a href="#最不常用算法（least-frequently-used，LFU）" class="headerlink" title="最不常用算法（least frequently used，LFU）"></a>最不常用算法（least frequently used，LFU）</h2><p>每个页面都有一个计数器，访问页面时，计数器+1，缺页时置换访问次数最少的页</p>
+<p>缺点:</p>
+<ol>
+<li>一开始页面频繁使用，导致计数器数值较大，导致不再使用的页面一直无法置换出去。（解决方法：数值较大的计数器，定期减少其数值）</li>
+</ol>
+<h3 id="LRU-和-LFU"><a href="#LRU-和-LFU" class="headerlink" title="LRU 和 LFU"></a>LRU 和 LFU</h3><p>最不常用算法和最近最久未使用页面置换算法的区别主要在于关注点不同</p>
+<ol>
+<li>最不常使用算法关注的是使用次数的多少，使用次数越多越能得到驻留的机会。</li>
+<li>最近最久未使用页面置换算法关注的是最近是否有使用，若最近越常使用，得到的驻留机会更大。</li>
+</ol>
+<p><a target="_blank" rel="noopener" href="https://yuerer.com/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E4%B9%8B-%E8%99%9A%E6%8B%9F%E5%AD%98%E5%82%A8%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95/">https://yuerer.com/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E4%B9%8B-%E8%99%9A%E6%8B%9F%E5%AD%98%E5%82%A8%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95/</a></p>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2021/05/08/operationsystem/operation_system_%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F%E4%B8%AD%E5%B8%B8%E8%A7%81%E7%9A%84%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95/" title="操作系统_操作系统中常见的页面置换算法">https://nytech3.github.io/2021/05/08/operationsystem/operation_system_操作系统中常见的页面置换算法/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" rel="tag"># 操作系统</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/05/06/operationsystem/operation_system_%E5%AF%84%E5%AD%98%E5%99%A8_cache_%E5%86%85%E5%AD%98_%E7%A1%AC%E7%9B%98/" rel="prev" title="操作系统_寄存器 cache 内存 硬盘(转)">
+      <i class="fa fa-chevron-left"></i> 操作系统_寄存器 cache 内存 硬盘(转)
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/05/09/operationsystem/operation_system_%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" rel="next" title="操作系统_文件系统">
+      操作系统_文件系统 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-2"><a class="nav-link" href="#OPT%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95-%E6%9C%80%E4%BD%B3%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95"><span class="nav-number">1.</span> <span class="nav-text">OPT页面置换算法(最佳页面置换算法)</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#%E5%9F%BA%E6%9C%AC%E6%80%9D%E8%B7%AF"><span class="nav-number">1.1.</span> <span class="nav-text">基本思路</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E7%AE%97%E6%B3%95%E4%B8%BE%E4%BE%8B"><span class="nav-number">1.2.</span> <span class="nav-text">算法举例</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%85%88%E8%BF%9B%E5%85%88%E5%87%BA%E7%AE%97%E6%B3%95%EF%BC%88first-in-first-out-%EF%BC%8CFIFO-%EF%BC%89"><span class="nav-number">2.</span> <span class="nav-text">先进先出算法（first-in first-out ，FIFO ）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#Belady-%E7%8E%B0%E8%B1%A1"><span class="nav-number">2.1.</span> <span class="nav-text">Belady 现象</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#%E4%BA%A7%E7%94%9F-Belady-%E7%8E%B0%E8%B1%A1%E7%9A%84%E5%8E%9F%E5%9B%A0"><span class="nav-number">2.2.</span> <span class="nav-text">产生 Belady 现象的原因</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%80%E8%BF%91%E6%9C%80%E4%B9%85%E6%9C%AA%E4%BD%BF%E7%94%A8%E7%AE%97%E6%B3%95%EF%BC%88least-recently-used%EF%BC%8C-LRU-%EF%BC%89"><span class="nav-number">3.</span> <span class="nav-text">最近最久未使用算法（least recently used， LRU ）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%97%B6%E9%92%9F%E9%A1%B5%E9%9D%A2%E7%BD%AE%E6%8D%A2%E7%AE%97%E6%B3%95%EF%BC%88Clock%EF%BC%89"><span class="nav-number">4.</span> <span class="nav-text">时钟页面置换算法（Clock）</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E6%9C%80%E4%B8%8D%E5%B8%B8%E7%94%A8%E7%AE%97%E6%B3%95%EF%BC%88least-frequently-used%EF%BC%8CLFU%EF%BC%89"><span class="nav-number">5.</span> <span class="nav-text">最不常用算法（least frequently used，LFU）</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#LRU-%E5%92%8C-LFU"><span class="nav-number">5.1.</span> <span class="nav-text">LRU 和 LFU</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

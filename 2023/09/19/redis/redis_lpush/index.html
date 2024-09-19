@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="工作流程 查找key是否已经在client选择的db中，使用的lookupKeyWrite方法，其中会涉及到键过期、键访问时间的更新。 检查键对应的值是否为LIST类型，不是则直接返回 若对应的key不存在于db中，xx为True，则直接返回(xx代表存在才进行push，只有当使用LPUSHX或者RPUSHX时才会为True) 若对应的key不存在于对应的db中，则直接创建一个新的ListPac">
+<meta property="og:type" content="article">
+<meta property="og:title" content="源码阅读(四)-Redis中的LPUSH命令">
+<meta property="og:url" content="https://nytech3.github.io/2023/09/19/redis/redis_lpush/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="工作流程 查找key是否已经在client选择的db中，使用的lookupKeyWrite方法，其中会涉及到键过期、键访问时间的更新。 检查键对应的值是否为LIST类型，不是则直接返回 若对应的key不存在于db中，xx为True，则直接返回(xx代表存在才进行push，只有当使用LPUSHX或者RPUSHX时才会为True) 若对应的key不存在于对应的db中，则直接创建一个新的ListPac">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-09-19T10:00:00.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:57.000Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="c">
+<meta property="article:tag" content="redis">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/2023/09/19/redis/redis_lpush/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>源码阅读(四)-Redis中的LPUSH命令 | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2023/09/19/redis/redis_lpush/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          源码阅读(四)-Redis中的LPUSH命令
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-09-19 18:00:00" itemprop="dateCreated datePublished" datetime="2023-09-19T18:00:00+08:00">2023-09-19</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/technology/" itemprop="url" rel="index"><span itemprop="name">technology</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2023/09/19/redis/redis_lpush/" class="post-meta-item leancloud_visitors" data-flag-title="源码阅读(四)-Redis中的LPUSH命令" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<h1 id="工作流程"><a href="#工作流程" class="headerlink" title="工作流程"></a>工作流程</h1><ol>
+<li>查找key是否已经在client选择的db中，使用的lookupKeyWrite方法，其中会涉及到键过期、键访问时间的更新。</li>
+<li>检查键对应的值是否为LIST类型，不是则直接返回</li>
+<li>若对应的key不存在于db中，xx为True，则直接返回(xx代表存在才进行push，只有当使用LPUSHX或者RPUSHX时才会为True)</li>
+<li>若对应的key不存在于对应的db中，则直接创建一个新的ListPack对象作为值，再创建一个dictEntry指向key和val对象，再放入到db-&gt;dict中</li>
+<li>检查队列加入值之后是否会导致超过listpack限制，若超过则进行类型转化，转化成QuickList类型（QuickList其实是由ListPack列表组成）</li>
+<li>将数据插入队列中，这里会分成四种情况<br>a. 如果队列为quicklist类型，并且值为int类型，将val转化为string类型，插入队列中<br>b. 如果队列为quicklist类型，并且值不为int类型，直接插入队列中<br>c. 如果队列为listpack 类型，并且值为int，则将值进行类型转化，这里并不是直接将值转化为字符串，详见<code>lpEncodeIntegerGetType</code>函数代码，然后插入队列中<br>d. 如果队列为listpack 类型，并且值不为int，则直接插入队列中</li>
+<li>针对于插入队列这里得区分下以下两种种情况<br>a. 如果队列为quicklist类型，则取出头部或者尾部(取决于从左侧加入队列还是从右侧加入队列)的listpack，加入到listpack中<br>b. 如果队列为listpack 类型，则可能需要扩容，将插入的指定位置后的数据全部往后进行copy，预留位置插入新的值</li>
+<li>每插入一个值就将<code>server.dirty+1</code></li>
+<li>完成值的插入，进行事件推送<span id="more"></span></li>
+</ol>
+<blockquote>
+<p>注意: LPUSH、RPUSH、LPUSHX、RPUSHX的实现底层是一样的<br>LPUSH: 从左侧插入值<br>RPUSH: 从右侧插入值<br>LPUSHX: 如果key存在则从左侧插入值<br>RPUSHX: 如果key存在则从右侧插入值</p>
+</blockquote>
+<h1 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h1><h2 id="lpush-json"><a href="#lpush-json" class="headerlink" title="lpush json"></a>lpush json</h2><p>该命令为LPUSH，将一个或多个元素添加到列表的开头。如果键不存在，则创建该键。对于每对添加的字段/值，LPUSH命令的时间复杂度为O(1)，所以添加多个时，时间复杂度为O(n)。<br>其组别为”list”。 从1.0.0开始引入，该命令至少需要3个参数。对应的方法为lpushCommand。在2.4.0版本之后，LPUSH开始接受多个值。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;LPUSH&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;summary&quot;</span>: <span class="string">&quot;Prepends one or more elements to a list. Creates the key if it doesn&#x27;t exist.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;complexity&quot;</span>: <span class="string">&quot;O(1) for each element added, so O(N) to add N elements when the command is called with multiple arguments.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;group&quot;</span>: <span class="string">&quot;list&quot;</span>,</span><br><span class="line">        <span class="string">&quot;since&quot;</span>: <span class="string">&quot;1.0.0&quot;</span>,</span><br><span class="line">        <span class="string">&quot;arity&quot;</span>: <span class="number">-3</span>,</span><br><span class="line">        <span class="string">&quot;function&quot;</span>: <span class="string">&quot;lpushCommand&quot;</span>,</span><br><span class="line">        <span class="string">&quot;history&quot;</span>: [</span><br><span class="line">            [</span><br><span class="line">                <span class="string">&quot;2.4.0&quot;</span>,</span><br><span class="line">                <span class="string">&quot;Accepts multiple `element` arguments.&quot;</span></span><br><span class="line">            ]</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;command_flags&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;WRITE&quot;</span>,</span><br><span class="line">            <span class="string">&quot;DENYOOM&quot;</span>,</span><br><span class="line">            <span class="string">&quot;FAST&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;acl_categories&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;LIST&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;key_specs&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;flags&quot;</span>: [</span><br><span class="line">                    <span class="string">&quot;RW&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;INSERT&quot;</span></span><br><span class="line">                ],</span><br><span class="line">                <span class="string">&quot;begin_search&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;index&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;pos&quot;</span>: <span class="number">1</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;,</span><br><span class="line">                <span class="string">&quot;find_keys&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;range&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;lastkey&quot;</span>: <span class="number">0</span>,</span><br><span class="line">                        <span class="string">&quot;step&quot;</span>: <span class="number">1</span>,</span><br><span class="line">                        <span class="string">&quot;limit&quot;</span>: <span class="number">0</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;reply_schema&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;description&quot;</span>: <span class="string">&quot;Length of the list after the push operations.&quot;</span>,</span><br><span class="line">            <span class="string">&quot;type&quot;</span>: <span class="string">&quot;integer&quot;</span></span><br><span class="line">        &#125;,</span><br><span class="line">        <span class="string">&quot;arguments&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;key&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;key&quot;</span>,</span><br><span class="line">                <span class="string">&quot;key_spec_index&quot;</span>: <span class="number">0</span></span><br><span class="line">            &#125;,</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;element&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>,</span><br><span class="line">                <span class="string">&quot;multiple&quot;</span>: <span class="literal">true</span></span><br><span class="line">            &#125;</span><br><span class="line">        ]</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+<h2 id="代码分析"><a href="#代码分析" class="headerlink" title="代码分析"></a>代码分析</h2><p>-&gt; lpushCommand -&gt; pushGenericCommand:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Implements LPUSH/RPUSH/LPUSHX/RPUSHX. </span></span><br><span class="line"><span class="comment"> * &#x27;xx&#x27;: push if key exists. */</span></span><br><span class="line"><span class="comment">//  此代码为LPUSH/RPUSH/LPUSHX/RPUSHX的底层实现</span></span><br><span class="line"><span class="comment">/*</span></span><br><span class="line"><span class="comment"> * @param where</span></span><br><span class="line"><span class="comment"> *      #define LIST_HEAD 0 在队头插入 </span></span><br><span class="line"><span class="comment"> *      #define LIST_TAIL 1 在队尾插入 </span></span><br><span class="line"><span class="comment"> * @param xx</span></span><br><span class="line"><span class="comment"> *      如果key存在就插入</span></span><br><span class="line"><span class="comment"> */</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">pushGenericCommand</span><span class="params">(client *c, <span class="keyword">int</span> where, <span class="keyword">int</span> xx)</span> </span>&#123;</span><br><span class="line">    <span class="keyword">int</span> j;</span><br><span class="line">    <span class="comment">// 寻找对应的key，关于lookupKeyWrite已在set命令的代码解析中分析过了，不再重复梳理</span></span><br><span class="line">    robj *lobj = lookupKeyWrite(c-&gt;db, c-&gt;argv[<span class="number">1</span>]);</span><br><span class="line">    <span class="comment">// 检查对像是否为OBJ_LIST类型</span></span><br><span class="line">    <span class="keyword">if</span> (checkType(c,lobj,OBJ_LIST)) <span class="keyword">return</span>;</span><br><span class="line">    <span class="comment">// 如果对象不存在</span></span><br><span class="line">    <span class="keyword">if</span> (!lobj) &#123;</span><br><span class="line">        <span class="comment">// 如果xx=1，则表示存在才进行插入，所以不存在时直接返回</span></span><br><span class="line">        <span class="keyword">if</span> (xx) &#123;</span><br><span class="line">            addReply(c, shared.czero);</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 如果没有xx参数，则创建ListListPack对象</span></span><br><span class="line">        lobj = createListListpackObject();</span><br><span class="line">        <span class="comment">// 将键值对加入到redis的db中</span></span><br><span class="line">        dbAdd(c-&gt;db,c-&gt;argv[<span class="number">1</span>],lobj);</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    listTypeTryConversionAppend(lobj,c-&gt;argv,<span class="number">2</span>,c-&gt;argc<span class="number">-1</span>,<span class="literal">NULL</span>,<span class="literal">NULL</span>);</span><br><span class="line">    <span class="keyword">for</span> (j = <span class="number">2</span>; j &lt; c-&gt;argc; j++) &#123;</span><br><span class="line">        <span class="comment">// 将多个值压入队列中</span></span><br><span class="line">        listTypePush(lobj,c-&gt;argv[j],where);</span><br><span class="line">        <span class="comment">// 数据更改数量+1</span></span><br><span class="line">        server.dirty++;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 返回列表数据数量</span></span><br><span class="line">    addReplyLongLong(c, listTypeLength(lobj));</span><br><span class="line">    <span class="comment">// 发送lpush/rpush事件通知</span></span><br><span class="line">    <span class="keyword">char</span> *event = (where == LIST_HEAD) ? <span class="string">&quot;lpush&quot;</span> : <span class="string">&quot;rpush&quot;</span>;</span><br><span class="line">    signalModifiedKey(c,c-&gt;db,c-&gt;argv[<span class="number">1</span>]);</span><br><span class="line">    notifyKeyspaceEvent(NOTIFY_LIST,event,c-&gt;argv[<span class="number">1</span>],c-&gt;db-&gt;id);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; createListListpackObject:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function">robj *<span class="title">createListListpackObject</span><span class="params">(<span class="keyword">void</span>)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 创建一个容量为0的listpack数组</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> *lp = lpNew(<span class="number">0</span>);</span><br><span class="line">    <span class="comment">// 创建一个listpack redis对象</span></span><br><span class="line">    robj *o = createObject(OBJ_LIST,lp);</span><br><span class="line">    <span class="comment">// 设置编码格式为 OBJ_ENCODING_LISTPACK</span></span><br><span class="line">    o-&gt;encoding = OBJ_ENCODING_LISTPACK;</span><br><span class="line">    <span class="keyword">return</span> o;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; createListListpackObject -&gt; lpNew:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Create a new, empty listpack.</span></span><br><span class="line"><span class="comment"> * On success the new listpack is returned, otherwise an error is returned.</span></span><br><span class="line"><span class="comment"> * Pre-allocate at least `capacity` bytes of memory,</span></span><br><span class="line"><span class="comment"> * over-allocated memory can be shrunk by `lpShrinkToFit`.</span></span><br><span class="line"><span class="comment"> * */</span></span><br><span class="line"><span class="function"><span class="keyword">unsigned</span> <span class="keyword">char</span> *<span class="title">lpNew</span><span class="params">(<span class="keyword">size_t</span> capacity)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 申请一块内存，大小为capacity和LP_HDR_SIZE+1中较大的那个</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">char</span> *lp = lp_malloc(capacity &gt; LP_HDR_SIZE+<span class="number">1</span> ? capacity : LP_HDR_SIZE+<span class="number">1</span>);</span><br><span class="line">    <span class="comment">// 内存申请失败，则返回为空</span></span><br><span class="line">    <span class="keyword">if</span> (lp == <span class="literal">NULL</span>) <span class="keyword">return</span> <span class="literal">NULL</span>;</span><br><span class="line">    <span class="comment">// 设置listpack的总字节数，初始值为LP_HDR_SIZE+1</span></span><br><span class="line">    lpSetTotalBytes(lp,LP_HDR_SIZE+<span class="number">1</span>);</span><br><span class="line">    <span class="comment">// 设置list中的数据个数</span></span><br><span class="line">    lpSetNumElements(lp,<span class="number">0</span>);</span><br><span class="line">    <span class="comment">// 设置list终结符LP_EOF</span></span><br><span class="line">    lp[LP_HDR_SIZE] = LP_EOF;</span><br><span class="line">    <span class="keyword">return</span> lp;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; listTypeTryConversionAppend -&gt; listTypeTryConversionRaw:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Check if the list needs to be converted to appropriate encoding due to</span></span><br><span class="line"><span class="comment"> * growing, shrinking or other cases.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * &#x27;lct&#x27; can be one of the following values:</span></span><br><span class="line"><span class="comment"> * LIST_CONV_AUTO      - Used after we built a new list, and we want to let the</span></span><br><span class="line"><span class="comment"> *                       function decide on the best encoding for that list.</span></span><br><span class="line"><span class="comment"> * LIST_CONV_GROWING   - Used before or right after adding elements to the list,</span></span><br><span class="line"><span class="comment"> *                       in which case we are likely to only consider converting</span></span><br><span class="line"><span class="comment"> *                       from listpack to quicklist.</span></span><br><span class="line"><span class="comment"> *                       &#x27;argv&#x27; is only used in this case to calculate the size</span></span><br><span class="line"><span class="comment"> *                       of a number of objects that will be added to list.</span></span><br><span class="line"><span class="comment"> * LIST_CONV_SHRINKING - Used after removing an element from the list, in which case we</span></span><br><span class="line"><span class="comment"> *                       wanna consider converting from quicklist to listpack. When we</span></span><br><span class="line"><span class="comment"> *                       know we&#x27;re shrinking, we use a lower (more strict) threshold in</span></span><br><span class="line"><span class="comment"> *                       order to avoid repeated conversions on every list change. */</span></span><br><span class="line"><span class="comment">/* 检查列表是否需要由于增长、收缩或其他情况而转换为适当的编码。</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * &#x27;lct&#x27;可以是以下值之一：</span></span><br><span class="line"><span class="comment"> * LIST_CONV_AUTO      - 在我们构建了一个新的列表后使用，我们希望让函数决定该列表的最佳编码。</span></span><br><span class="line"><span class="comment"> * LIST_CONV_GROWING   - 在向列表添加元素之前或之后使用，在这种情况下，我们可能只考虑从listpack转换为quicklist。</span></span><br><span class="line"><span class="comment"> *                       &#x27;argv&#x27;仅在此情况下使用，用于计算将添加到列表的一些对象的大小。</span></span><br><span class="line"><span class="comment"> * LIST_CONV_SHRINKING - 在从列表中删除元素后使用，在这种情况下，我们希望考虑从quicklist转换为listpack。当我们</span></span><br><span class="line"><span class="comment"> *                       知道我们在缩小时，我们使用更低(更严格)的阈值，以避免在每次列表更改时都进行重复的转换。 */</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">listTypeTryConversionRaw</span><span class="params">(robj *o, list_conv_type lct,</span></span></span><br><span class="line"><span class="function"><span class="params">                                     robj **argv, <span class="keyword">int</span> start, <span class="keyword">int</span> end,</span></span></span><br><span class="line"><span class="function"><span class="params">                                     beforeConvertCB fn, <span class="keyword">void</span> *data)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">// 如果列表的编码是quicklist</span></span><br><span class="line">    <span class="keyword">if</span> (o-&gt;encoding == OBJ_ENCODING_QUICKLIST) &#123;</span><br><span class="line">        <span class="comment">// 如果列表正在增长，则不需要转换quicklist，直接返回</span></span><br><span class="line">        <span class="keyword">if</span> (lct == LIST_CONV_GROWING) <span class="keyword">return</span>; <span class="comment">/* Growing has nothing to do with quicklist */</span></span><br><span class="line">        <span class="comment">// 尝试将quicklist转换为其他适当的编码</span></span><br><span class="line">        listTypeTryConvertQuicklist(o, lct == LIST_CONV_SHRINKING, fn, data);</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (o-&gt;encoding == OBJ_ENCODING_LISTPACK) &#123;</span><br><span class="line">        <span class="comment">// 如果列表的编码是listpack</span></span><br><span class="line">        <span class="comment">// 如果列表正在收缩，则不需要转换listpack，直接返回</span></span><br><span class="line">        <span class="keyword">if</span> (lct == LIST_CONV_SHRINKING) <span class="keyword">return</span>; <span class="comment">/* Shrinking has nothing to do with listpack */</span></span><br><span class="line">        <span class="comment">// 尝试将Listpack转换为其他适当的编码</span></span><br><span class="line">        listTypeTryConvertListpack(o, argv, start, end, fn, data);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        serverPanic(<span class="string">&quot;Unknown list encoding&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; listTypeTryConversionAppend -&gt; listTypeTryConversionRaw -&gt; listTypeTryConvertQuicklist:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Check the length and size of a quicklist to see if we need to convert it to listpack.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * &#x27;shrinking&#x27; is 1 means that the conversion is due to a list shrinking, to avoid</span></span><br><span class="line"><span class="comment"> * frequent conversions of quicklist and listpack due to frequent insertion and</span></span><br><span class="line"><span class="comment"> * deletion, we don&#x27;t convert quicklist to listpack until its length or size is</span></span><br><span class="line"><span class="comment"> * below half of the limit.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * If callback is given the function is called in order for caller to do some work</span></span><br><span class="line"><span class="comment"> * before the list conversion. */</span></span><br><span class="line"><span class="comment">/* 检查quicklist的长度和大小，看是否需要转换为listpack。</span></span><br><span class="line"><span class="comment"> * &#x27;shrinking&#x27;为1表示由于列表收缩而进行的转换，为避免由于频繁插入和删除而导致quicklist和listpack之间的频繁转换，</span></span><br><span class="line"><span class="comment"> * 我们不会将quicklist转换为listpack，除非其长度或大小低于限制的一半。</span></span><br><span class="line"><span class="comment"> * 如果提供了回调函数，那么在列表转换之前，会调用该函数，以便调用者执行一些工作。 */</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">listTypeTryConvertQuicklist</span><span class="params">(robj *o, <span class="keyword">int</span> shrinking, beforeConvertCB fn, <span class="keyword">void</span> *data)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 确保对象的编码是quicklist</span></span><br><span class="line">    serverAssert(o-&gt;encoding == OBJ_ENCODING_QUICKLIST);</span><br><span class="line"></span><br><span class="line">    <span class="keyword">size_t</span> sz_limit;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">int</span> count_limit;</span><br><span class="line">    quicklist *ql = o-&gt;ptr;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* quicklist只有在它只有一个packed节点时，才能被转换为listpack */</span></span><br><span class="line">    <span class="comment">/* A quicklist can be converted to listpack only if it has only one packed node. */</span></span><br><span class="line">    <span class="keyword">if</span> (ql-&gt;len != <span class="number">1</span> || ql-&gt;head-&gt;container != QUICKLIST_NODE_CONTAINER_PACKED)</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Check the length or size of the quicklist is below the limit. */</span></span><br><span class="line">    <span class="comment">/* 获取listNode的count限制和size限制 */</span></span><br><span class="line">    quicklistNodeLimit(server.list_max_listpack_size, &amp;sz_limit, &amp;count_limit);</span><br><span class="line">    <span class="keyword">if</span> (shrinking) &#123;</span><br><span class="line">        <span class="comment">// 如果是收缩,限制/2</span></span><br><span class="line">        sz_limit /= <span class="number">2</span>;</span><br><span class="line">        count_limit /= <span class="number">2</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 如果ql的大小大于限制或者数量大于限制则直接返回</span></span><br><span class="line">    <span class="keyword">if</span> (ql-&gt;head-&gt;sz &gt; sz_limit || ql-&gt;count &gt; count_limit) <span class="keyword">return</span>;</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Invoke callback before conversion. */</span></span><br><span class="line">    <span class="comment">// 如果有回调函数则回调</span></span><br><span class="line">    <span class="keyword">if</span> (fn) fn(data);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Extract the listpack from the unique quicklist node,</span></span><br><span class="line"><span class="comment">     * then reset it and release the quicklist. */</span></span><br><span class="line">    <span class="comment">/* 从唯一的quicklist节点中提取listpack，</span></span><br><span class="line"><span class="comment">     * 然后重置它并释放quicklist */</span></span><br><span class="line">    o-&gt;ptr = ql-&gt;head-&gt;entry;</span><br><span class="line">    ql-&gt;head-&gt;entry = <span class="literal">NULL</span>;</span><br><span class="line">    quicklistRelease(ql);</span><br><span class="line">    o-&gt;encoding = OBJ_ENCODING_LISTPACK;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; listTypeTryConversionAppend -&gt; listTypeTryConversionRaw -&gt; listTypeTryConvertQuicklist<br>-&gt; quicklistNodeLimit:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Calculate the size limit or length limit of the quicklist node</span></span><br><span class="line"><span class="comment"> * based on &#x27;fill&#x27;, and is also used to limit list listpack. */</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">quicklistNodeLimit</span><span class="params">(<span class="keyword">int</span> fill, <span class="keyword">size_t</span> *size, <span class="keyword">unsigned</span> <span class="keyword">int</span> *count)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 初始化size为最大可能的大小</span></span><br><span class="line">    *size = SIZE_MAX;</span><br><span class="line">    <span class="comment">// 初始化count为最大可能的长度</span></span><br><span class="line">    *count = UINT_MAX;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">if</span> (fill &gt;= <span class="number">0</span>) &#123;</span><br><span class="line">        <span class="comment">/* 确保一个节点至少有一个条目 */</span></span><br><span class="line">        <span class="comment">// 如果fill为0，设置count为1，否则为fill</span></span><br><span class="line">        <span class="comment">/* Ensure that one node have at least one entry */</span></span><br><span class="line">        *count = (fill == <span class="number">0</span>) ? <span class="number">1</span> : fill;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// 计算偏移量</span></span><br><span class="line">        <span class="keyword">size_t</span> offset = (-fill) - <span class="number">1</span>;</span><br><span class="line">        <span class="comment">// 计算优化级别的最大值</span></span><br><span class="line">        <span class="comment">// sizeof(optimization_level)给出的是整个数组optimization_level在内存中所占用的字节大小。</span></span><br><span class="line">        <span class="comment">// sizeof(*optimization_level)给出的是数组中一个元素在内存中所占用的字节大小。</span></span><br><span class="line">        <span class="keyword">size_t</span> max_level = <span class="keyword">sizeof</span>(optimization_level) / <span class="keyword">sizeof</span>(*optimization_level);</span><br><span class="line">        <span class="keyword">if</span> (offset &gt;= max_level) offset = max_level - <span class="number">1</span>;</span><br><span class="line">        <span class="comment">// 设置size为优化级别对应的值</span></span><br><span class="line">        *size = optimization_level[offset];</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; listTypeTryConversionAppend -&gt; listTypeTryConversionRaw<br>-&gt; listTypeTryConvertListpack:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Check the length and size of a number of objects that will be added to list to see</span></span><br><span class="line"><span class="comment"> * if we need to convert a listpack to a quicklist. Note that we only check string</span></span><br><span class="line"><span class="comment"> * encoded objects as their string length can be queried in constant time.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * If callback is given the function is called in order for caller to do some work</span></span><br><span class="line"><span class="comment"> * before the list conversion. */</span></span><br><span class="line"><span class="function"><span class="keyword">static</span> <span class="keyword">void</span> <span class="title">listTypeTryConvertListpack</span><span class="params">(robj *o, robj **argv, <span class="keyword">int</span> start, <span class="keyword">int</span> end,</span></span></span><br><span class="line"><span class="function"><span class="params">                                       beforeConvertCB fn, <span class="keyword">void</span> *data)</span></span></span><br><span class="line"><span class="function"></span>&#123;</span><br><span class="line">    <span class="comment">/* 确保传入的对象o的编码方式是LISTPACK */</span></span><br><span class="line">    serverAssert(o-&gt;encoding == OBJ_ENCODING_LISTPACK);</span><br><span class="line">    <span class="comment">/* 初始化两个变量，用于存储待添加对象的总字节大小和长度 */</span></span><br><span class="line">    <span class="keyword">size_t</span> add_bytes = <span class="number">0</span>;</span><br><span class="line">    <span class="keyword">size_t</span> add_length = <span class="number">0</span>;</span><br><span class="line">    <span class="comment">/* 如果传入的argv不为空，遍历待添加的对象 */</span></span><br><span class="line">    <span class="keyword">if</span> (argv) &#123;</span><br><span class="line">        <span class="keyword">for</span> (<span class="keyword">int</span> i = start; i &lt;= end; i++) &#123;</span><br><span class="line">            <span class="comment">/* 如果当前的对象不是字符串编码，跳过当前循环 */</span></span><br><span class="line">            <span class="keyword">if</span> (!sdsEncodedObject(argv[i]))</span><br><span class="line">                <span class="keyword">continue</span>;</span><br><span class="line">            <span class="comment">// 计算当前对象的大小</span></span><br><span class="line">            add_bytes += sdslen(argv[i]-&gt;ptr);</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 计算添加对象的个数</span></span><br><span class="line">        add_length = end - start + <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">/* 判断添加新对象后的listpack是否超过了quicklist节点的限制 */</span></span><br><span class="line">    <span class="keyword">if</span> (quicklistNodeExceedsLimit(server.list_max_listpack_size,</span><br><span class="line">            lpBytes(o-&gt;ptr) + add_bytes, lpLength(o-&gt;ptr) + add_length))</span><br><span class="line">    &#123;</span><br><span class="line">        <span class="comment">/* Invoke callback before conversion. */</span></span><br><span class="line">        <span class="comment">// 如果超过了限制执行回调函数</span></span><br><span class="line">        <span class="keyword">if</span> (fn) fn(data);</span><br><span class="line">        <span class="comment">// 创建quicklist对象</span></span><br><span class="line">        quicklist *ql = quicklistCreate();</span><br><span class="line">        quicklistSetOptions(ql, server.list_max_listpack_size, server.list_compress_depth);</span><br><span class="line"></span><br><span class="line">        <span class="comment">/* Append listpack to quicklist if it&#x27;s not empty, otherwise release it. */</span></span><br><span class="line">        <span class="comment">/* 如果原来的listpack不为空，将它添加到新的quicklist中，否则释放它 */</span></span><br><span class="line">        <span class="keyword">if</span> (lpLength(o-&gt;ptr))</span><br><span class="line">            quicklistAppendListpack(ql, o-&gt;ptr);</span><br><span class="line">        <span class="keyword">else</span></span><br><span class="line">            lpFree(o-&gt;ptr);</span><br><span class="line">        <span class="comment">/* 将对象o的指针和编码方式分别设置为新的quicklist和QUICKLIST */</span></span><br><span class="line">        o-&gt;ptr = ql;</span><br><span class="line">        o-&gt;encoding = OBJ_ENCODING_QUICKLIST;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; listTypePush:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* The function pushes an element to the specified list object &#x27;subject&#x27;,</span></span><br><span class="line"><span class="comment"> * at head or tail position as specified by &#x27;where&#x27;.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * There is no need for the caller to increment the refcount of &#x27;value&#x27; as</span></span><br><span class="line"><span class="comment"> * the function takes care of it if needed. */</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">listTypePush</span><span class="params">(robj *subject, robj *value, <span class="keyword">int</span> where)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 判断是否为QUICK_LIST类型</span></span><br><span class="line">    <span class="keyword">if</span> (subject-&gt;encoding == OBJ_ENCODING_QUICKLIST) &#123;</span><br><span class="line">        <span class="comment">// 判断是在队头还是在队尾插入</span></span><br><span class="line">        <span class="keyword">int</span> pos = (where == LIST_HEAD) ? QUICKLIST_HEAD : QUICKLIST_TAIL;</span><br><span class="line">        <span class="comment">// 判断插入值是否为int类型</span></span><br><span class="line">        <span class="keyword">if</span> (value-&gt;encoding == OBJ_ENCODING_INT) &#123;</span><br><span class="line">            <span class="keyword">char</span> buf[<span class="number">32</span>];</span><br><span class="line">            <span class="comment">// 将longlong类型的数据转化成string类型</span></span><br><span class="line">            ll2string(buf, <span class="number">32</span>, (<span class="keyword">long</span>)value-&gt;ptr);</span><br><span class="line">            <span class="comment">// 将数据压入队列中</span></span><br><span class="line">            quicklistPush(subject-&gt;ptr, buf, <span class="built_in">strlen</span>(buf), pos);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">// 直接将数据压入队列</span></span><br><span class="line">            quicklistPush(subject-&gt;ptr, value-&gt;ptr, sdslen(value-&gt;ptr), pos);</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (subject-&gt;encoding == OBJ_ENCODING_LISTPACK) &#123; <span class="comment">// 如果类型为LISTPACK类型</span></span><br><span class="line">        <span class="comment">// 如果值的编码类型为int类型</span></span><br><span class="line">        <span class="keyword">if</span> (value-&gt;encoding == OBJ_ENCODING_INT) &#123;</span><br><span class="line">            <span class="comment">// 将int数据转化成char压入队列中(不是直接转化成字符串，详见lpEncodeIntegerGetType)</span></span><br><span class="line">            subject-&gt;ptr = (where == LIST_HEAD) ?</span><br><span class="line">                lpPrependInteger(subject-&gt;ptr, (<span class="keyword">long</span>)value-&gt;ptr) :</span><br><span class="line">                lpAppendInteger(subject-&gt;ptr, (<span class="keyword">long</span>)value-&gt;ptr);</span><br><span class="line">        &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">            <span class="comment">// 直接将数据压入队列中</span></span><br><span class="line">            subject-&gt;ptr = (where == LIST_HEAD) ?</span><br><span class="line">                lpPrepend(subject-&gt;ptr, value-&gt;ptr, sdslen(value-&gt;ptr)) :</span><br><span class="line">                lpAppend(subject-&gt;ptr, value-&gt;ptr, sdslen(value-&gt;ptr));</span><br><span class="line">        &#125;</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        serverPanic(<span class="string">&quot;Unknown list encoding&quot;</span>);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; listTypePush -&gt; quicklistPush:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="comment">/* Wrapper to allow argument-based switching between HEAD/TAIL pop */</span></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">quicklistPush</span><span class="params">(quicklist *quicklist, <span class="keyword">void</span> *value, <span class="keyword">const</span> <span class="keyword">size_t</span> sz,</span></span></span><br><span class="line"><span class="function"><span class="params">                   <span class="keyword">int</span> where)</span> </span>&#123;</span><br><span class="line">    <span class="comment">/* The head and tail should never be compressed (we don&#x27;t attempt to decompress them) */</span></span><br><span class="line">    <span class="comment">/* 确保quicklist的头部和尾部没有被压缩 */</span></span><br><span class="line">    <span class="keyword">if</span> (quicklist-&gt;head)</span><br><span class="line">        assert(quicklist-&gt;head-&gt;encoding != QUICKLIST_NODE_ENCODING_LZF);</span><br><span class="line">    <span class="keyword">if</span> (quicklist-&gt;tail)</span><br><span class="line">        assert(quicklist-&gt;tail-&gt;encoding != QUICKLIST_NODE_ENCODING_LZF);</span><br><span class="line">    <span class="comment">/* 如果where参数表示头部，将值添加到quicklist的头部 */</span></span><br><span class="line">    <span class="keyword">if</span> (where == QUICKLIST_HEAD) &#123;</span><br><span class="line">        quicklistPushHead(quicklist, value, sz);</span><br><span class="line">    <span class="comment">/* 如果where参数表示尾部，将值添加到quicklist的尾部 */</span></span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (where == QUICKLIST_TAIL) &#123;</span><br><span class="line">        quicklistPushTail(quicklist, value, sz);</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+<p>-&gt; lpushCommand -&gt; pushGenericCommand -&gt; listTypePush -&gt; quicklistPush -&gt; quicklistPushHead:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* Add new entry to head node of quicklist.</span></span><br><span class="line"><span class="comment"> *</span></span><br><span class="line"><span class="comment"> * Returns 0 if used existing head.</span></span><br><span class="line"><span class="comment"> * Returns 1 if new head created. */</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">quicklistPushHead</span><span class="params">(quicklist *quicklist, <span class="keyword">void</span> *value, <span class="keyword">size_t</span> sz)</span> </span>&#123;</span><br><span class="line">    <span class="comment">// 将头节点的第一个数据取出</span></span><br><span class="line">    quicklistNode *orig_head = quicklist-&gt;head;</span><br><span class="line">    <span class="comment">/* 如果元素大小超过设定的阈值（4gb），则创建新的节点来保存此元素，并返回1 */</span></span><br><span class="line">    <span class="keyword">if</span> (unlikely(isLargeElement(sz))) &#123;</span><br><span class="line">        __quicklistInsertPlainNode(quicklist, quicklist-&gt;head, value, sz, <span class="number">0</span>);</span><br><span class="line">        <span class="keyword">return</span> <span class="number">1</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">/* 如果头节点的剩余空间足够存储新元素，则将新元素添加到头节点，并更新节点的尺寸 */</span></span><br><span class="line">    <span class="keyword">if</span> (likely(</span><br><span class="line">            _quicklistNodeAllowInsert(quicklist-&gt;head, quicklist-&gt;fill, sz))) &#123;</span><br><span class="line">        <span class="comment">// 加入quicklist中的第一个listpack队列中，并放置到第一个元素的位置</span></span><br><span class="line">        quicklist-&gt;head-&gt;entry = lpPrepend(quicklist-&gt;head-&gt;entry, value, sz);</span><br><span class="line">        <span class="comment">// 更新节点大小</span></span><br><span class="line">        quicklistNodeUpdateSz(quicklist-&gt;head);</span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="comment">// 创建一个新的quicklist节点</span></span><br><span class="line">        quicklistNode *node = quicklistCreateNode();</span><br><span class="line">        <span class="comment">// 创建一个新的空listpack，将值插入listpack之后，在将listpack放置到quicklist的entry对象中</span></span><br><span class="line">        node-&gt;entry = lpPrepend(lpNew(<span class="number">0</span>), value, sz);</span><br><span class="line">        <span class="comment">// 更新节点大小</span></span><br><span class="line">        quicklistNodeUpdateSz(node);</span><br><span class="line">        <span class="comment">// 再将新增的quicklist节点加入到quicklist的前面</span></span><br><span class="line">        _quicklistInsertNodeBefore(quicklist, quicklist-&gt;head, node);</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 整个列表总体数据数量+1</span></span><br><span class="line">    quicklist-&gt;count++;</span><br><span class="line">    <span class="comment">// 列表中的第一个listpack对象数据数量+1</span></span><br><span class="line">    quicklist-&gt;head-&gt;count++;</span><br><span class="line">    <span class="comment">// 如果创建了新的quicklist节点则返回1，否则返回0</span></span><br><span class="line">    <span class="keyword">return</span> (orig_head != quicklist-&gt;head);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2023/09/19/redis/redis_lpush/" title="源码阅读(四)-Redis中的LPUSH命令">https://nytech3.github.io/2023/09/19/redis/redis_lpush/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/c/" rel="tag"># c</a>
+              <a href="/tags/redis/" rel="tag"># redis</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/09/16/redis/redis_hset/" rel="prev" title="源码阅读(三)-Redis中的HSET命令">
+      <i class="fa fa-chevron-left"></i> 源码阅读(三)-Redis中的HSET命令
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2023/09/22/redis/redis_blpop/" rel="next" title="源码阅读(五)-Redis中的BLPOP命令">
+      源码阅读(五)-Redis中的BLPOP命令 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B"><span class="nav-number">1.</span> <span class="nav-text">工作流程</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text">源码解析</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#lpush-json"><span class="nav-number">2.1.</span> <span class="nav-text">lpush json</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.2.</span> <span class="nav-text">代码分析</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="五种常见的网络IO模型:阻塞IO, 非阻塞IO, IO多路复用, 信号驱动IO, 异步IO 预备知识 内核空间&#x2F;用户空间操作系统为了支持多个进程在运行时互不干涉，一个进程崩溃不会影响到其他进程以及恶意进程不能直接读取和修改其他进程代码划分了内存空间，将内存空间划分成内核空间和用户空间。内核空间的代码和数据在访问时需要更高的权限。当访问内核空间数据时都会进行访问控制(Access Control)">
+<meta property="og:type" content="article">
+<meta property="og:title" content="操作系统_五种网络IO模型">
+<meta property="og:url" content="https://nytech3.github.io/2021/04/24/operationsystem/operation_system_IO/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="五种常见的网络IO模型:阻塞IO, 非阻塞IO, IO多路复用, 信号驱动IO, 异步IO 预备知识 内核空间&#x2F;用户空间操作系统为了支持多个进程在运行时互不干涉，一个进程崩溃不会影响到其他进程以及恶意进程不能直接读取和修改其他进程代码划分了内存空间，将内存空间划分成内核空间和用户空间。内核空间的代码和数据在访问时需要更高的权限。当访问内核空间数据时都会进行访问控制(Access Control)">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://nytech3.github.io/images/operation_system_IO_00.png">
+<meta property="og:image" content="https://nytech3.github.io/images/operation_system_IO_01.png">
+<meta property="og:image" content="https://nytech3.github.io/images/operation_system_IO_02.png">
+<meta property="og:image" content="https://nytech3.github.io/images/operation_system_IO_03.png">
+<meta property="og:image" content="https://nytech3.github.io/images/operation_system_IO_04.png">
+<meta property="og:image" content="https://nytech3.github.io/images/operation_system_IO_05.png">
+<meta property="og:image" content="https://nytech3.github.io/images/operation_system_IO_06.png">
+<meta property="og:image" content="https://nytech3.github.io/images/operation_system_IO_07.png">
+<meta property="article:published_time" content="2021-04-24T10:11:25.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:56.997Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="操作系统">
+<meta property="article:tag" content="IO">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://nytech3.github.io/images/operation_system_IO_00.png">
+
+<link rel="canonical" href="https://nytech3.github.io/2021/04/24/operationsystem/operation_system_IO/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>操作系统_五种网络IO模型 | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2021/04/24/operationsystem/operation_system_IO/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          操作系统_五种网络IO模型
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2021-04-24 18:11:25" itemprop="dateCreated datePublished" datetime="2021-04-24T18:11:25+08:00">2021-04-24</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2021/04/24/operationsystem/operation_system_IO/" class="post-meta-item leancloud_visitors" data-flag-title="操作系统_五种网络IO模型" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<h1 id="五种常见的网络IO模型"><a href="#五种常见的网络IO模型" class="headerlink" title="五种常见的网络IO模型:"></a>五种常见的网络IO模型:</h1><p>阻塞IO, 非阻塞IO, IO多路复用, 信号驱动IO, 异步IO</p>
+<h2 id="预备知识"><a href="#预备知识" class="headerlink" title="预备知识"></a>预备知识</h2><ol>
+<li>内核空间/用户空间<br>操作系统为了支持多个进程在运行时互不干涉，一个进程崩溃不会影响到其他进程以及恶意进程不能直接读取和修改其他进程代码划分了内存空间，将内存空间划分成内核空间和用户空间。内核空间的代码和数据在访问时需要更高的权限。当访问内核空间数据时都会进行访问控制(Access Control)<br>用户空间就是用户进程所在的空间，内核空间就是系统所占据的空间。内存空间的划分是由操作系统决定的，因此不同系统对空间的划分也会有所不同。当一个进程执行系统调用(例如 文件读取/写入)时，进程就进入了内核运行态。<br>参考文章: <a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/343597285">用户空间和内核空间的区别</a></li>
+</ol>
+<span id="more"></span>
+
+
+
+<h2 id="IO操作"><a href="#IO操作" class="headerlink" title="IO操作"></a>IO操作</h2><p>IO操作主要分两阶段  </p>
+<ol>
+<li>数据准备阶段</li>
+<li>内核空间复制数据到用户空间<br>只有执行完1，2阶段后才能进入数据操作阶段.  </li>
+</ol>
+<p><img src="/images/operation_system_IO_00.png" alt="operation_system_IO_00">  </p>
+<h2 id="阻塞IO-BIO"><a href="#阻塞IO-BIO" class="headerlink" title="阻塞IO(BIO)"></a>阻塞IO(BIO)</h2><p><img src="/images/operation_system_IO_01.png" alt="operation_system_IO_01">  </p>
+<p>BIO的运行流程:  </p>
+<ol>
+<li>用户进程发起IO调用</li>
+<li>内核空间从磁盘读取数据</li>
+<li>将数据拷贝至用户空间</li>
+<li>操作数据</li>
+</ol>
+<p>这个流程中在准备数据到内核空间和拷贝数据到用户空间这两个阶段一直处于阻塞阶段。</p>
+<h2 id="非阻塞IO-NIO"><a href="#非阻塞IO-NIO" class="headerlink" title="非阻塞IO(NIO)"></a>非阻塞IO(NIO)</h2><p><img src="/images/operation_system_IO_02.png" alt="operation_system_IO_02">  </p>
+<p>在非阻塞IO中，用户进程发起IO调用之后，能够马上得到内核执行IO操作的返回结果。<br>虽然非阻塞IO相比阻塞IO而言性能上提升了很多，但依旧存在较大的性能问题，其频繁的轮询内核执行结果，会大大的耗费系统资源。例如，当有1000个并发IO请求，那么在单位时间内就有1000次系统调用去轮询，这样显然是不合理的。  </p>
+<h2 id="IO多路复用"><a href="#IO多路复用" class="headerlink" title="IO多路复用"></a>IO多路复用</h2><p>IO多路复用为了减少重复多次的去调起系统IO，提供了select/poll/epoll机制。<br>其只要发起一次系统调用即可返回状态为可用状态的系统状态。<br>其中select/poll仍有内核存在无效的循环遍历的情况，为此引入了epoll。</p>
+<h3 id="IO多路复用的三种机制"><a href="#IO多路复用的三种机制" class="headerlink" title="IO多路复用的三种机制"></a>IO多路复用的三种机制</h3><p>select/poll:<br><img src="/images/operation_system_IO_03.png" alt="operation_system_IO_03"><br>对于select，其底层是有数组实现的，由于内核规定了其在32位系统下的最大fd数为1024，64位下为2048，所以其可被监视的fd是有限制的。可以修改源码中的最大限制，然后重新编译内核，以达到重新编译内核的目的。<br>相关源码: </p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">static</span> __inline__ <span class="keyword">void</span> __FD_SET(<span class="keyword">unsigned</span> <span class="keyword">long</span> fd, __kernel_fd_set *fdsetp)</span><br><span class="line">&#123;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">long</span> _tmp = fd / __NFDBITS;</span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">long</span> _rem = fd % __NFDBITS;</span><br><span class="line">    fdsetp-&gt;fds_bits[_tmp] |= (<span class="number">1UL</span>&lt;&lt;_rem);</span><br><span class="line">&#125;</span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> __NFDBITS    (8 * sizeof(unsigned long))</span></span><br><span class="line"><span class="keyword">typedef</span> <span class="class"><span class="keyword">struct</span> &#123;</span></span><br><span class="line">    <span class="keyword">unsigned</span> <span class="keyword">long</span> fds_bits [__FDSET_LONGS];</span><br><span class="line">&#125; __kernel_fd_set;</span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> __FDSET_LONGS   (__FD_SETSIZE/__NFDBITS)</span></span><br><span class="line"><span class="meta">#<span class="meta-keyword">define</span> __FD_SETSIZE    1024</span></span><br></pre></td></tr></table></figure>
+
+<p>poll本质上实现跟select没有区别，主要不同是在于其底层改用链表实现，没有规定其最大数量。</p>
+<p>epoll:<br><img src="/images/operation_system_IO_04.png" alt="operation_system_IO_04"><br>epoll相比select/poll多了两次系统调用，其中epoll_create建立与内核的链接，epoll_ctl注册事件，epoll_wait阻塞用户进程，等待IO事件。<br>epoll已经大大优化了IO执行效率，但是其第一阶段，即等待准备数据的阶段仍然是阻塞的。</p>
+<p><img src="/images/operation_system_IO_05.png" alt="operation_system_IO_05">  </p>
+<h3 id="unix网络编程中的fd"><a href="#unix网络编程中的fd" class="headerlink" title="unix网络编程中的fd"></a>unix网络编程中的fd</h3><p>fd的全称为file descriptor，是进程独有的文件描述符索引。FileDescriptor可以被用来表示开放的文件,开放的套接字等。<br>对于本地文件，fd并不是直接指向真正的底层文件，fd首先索引到file table，file table再索引到Inode table，这时才真正的描述了底层文件。系统级的file table还记录了每个文件被打开的方式：读、写、追加…。</p>
+<h2 id="信号驱动IO-SIGIO"><a href="#信号驱动IO-SIGIO" class="headerlink" title="信号驱动IO(SIGIO)"></a>信号驱动IO(SIGIO)</h2><p><img src="/images/operation_system_IO_06.png" alt="operation_system_IO_06"><br>信号驱动与BIO和NIO最大的区别在于，其不会在第一阶段，即数据准备阶段阻塞用户进程。<br>用户进程调起系统调用之后，系统调用迅速返回结果，当数据准备好之后，会给用户进程发送一个信号，用户进程接收到信号之后就开始执行第二阶段。</p>
+<h2 id="异步IO-AIO"><a href="#异步IO-AIO" class="headerlink" title="异步IO(AIO)"></a>异步IO(AIO)</h2><p><img src="/images/operation_system_IO_07.png" alt="operation_system_IO_07"><br>AIO真正的做到了全流程非阻塞，在用户进程发起系统调用之后，内核迅速将执行返回，待执行完数据准备和数据拷贝之后，才通知用户进程处理数据。 </p>
+<p>参考资料:<br><a target="_blank" rel="noopener" href="https://notes.shichao.io/unp/ch6/">I/O Multiplexing: The select and poll Functions</a><br><a target="_blank" rel="noopener" href="https://leetcode-cn.com/circle/discuss/uHGOZo/">交流｜阻塞非阻塞与同步异步的区别是什么？</a><br><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/343597285">用户空间和内核空间的区别</a><br><a target="_blank" rel="noopener" href="https://www.zhihu.com/question/19732473/answer/14413599">怎样理解阻塞非阻塞与同步异步的区别？</a><br><a target="_blank" rel="noopener" href="https://www.cnblogs.com/loveer/p/11479249.html#1609882153">彻底理解同步 异步 阻塞 非阻塞</a><br><a target="_blank" rel="noopener" href="https://blog.csdn.net/qq_34802511/article/details/81543817">IO模式和IO多路复用 阻塞IO、非阻塞IO、同步IO、异步IO等概念</a><br><a target="_blank" rel="noopener" href="https://www.cnblogs.com/sheng-jie/p/how-much-you-know-about-io-models.html">IO 模型知多少 | 理论篇</a><br><a target="_blank" rel="noopener" href="https://snailclimb.gitee.io/javaguide/#/docs/java/basis/IO%E6%A8%A1%E5%9E%8B">IO模型</a>  </p>
+
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2021/04/24/operationsystem/operation_system_IO/" title="操作系统_五种网络IO模型">https://nytech3.github.io/2021/04/24/operationsystem/operation_system_IO/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" rel="tag"># 操作系统</a>
+              <a href="/tags/IO/" rel="tag"># IO</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2021/04/23/designpattern/%E5%8D%95%E4%BE%8B%E6%A8%A1%E5%BC%8F/" rel="prev" title="设计模式-单例模式">
+      <i class="fa fa-chevron-left"></i> 设计模式-单例模式
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2021/04/25/operationsystem/operation_system_IO_PROCESS/" rel="next" title="操作系统_IO的工作流程[转]">
+      操作系统_IO的工作流程[转] <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BA%94%E7%A7%8D%E5%B8%B8%E8%A7%81%E7%9A%84%E7%BD%91%E7%BB%9CIO%E6%A8%A1%E5%9E%8B"><span class="nav-number">1.</span> <span class="nav-text">五种常见的网络IO模型:</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%A2%84%E5%A4%87%E7%9F%A5%E8%AF%86"><span class="nav-number">1.1.</span> <span class="nav-text">预备知识</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#IO%E6%93%8D%E4%BD%9C"><span class="nav-number">1.2.</span> <span class="nav-text">IO操作</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%98%BB%E5%A1%9EIO-BIO"><span class="nav-number">1.3.</span> <span class="nav-text">阻塞IO(BIO)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E9%9D%9E%E9%98%BB%E5%A1%9EIO-NIO"><span class="nav-number">1.4.</span> <span class="nav-text">非阻塞IO(NIO)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#IO%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A8"><span class="nav-number">1.5.</span> <span class="nav-text">IO多路复用</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#IO%E5%A4%9A%E8%B7%AF%E5%A4%8D%E7%94%A8%E7%9A%84%E4%B8%89%E7%A7%8D%E6%9C%BA%E5%88%B6"><span class="nav-number">1.5.1.</span> <span class="nav-text">IO多路复用的三种机制</span></a></li><li class="nav-item nav-level-3"><a class="nav-link" href="#unix%E7%BD%91%E7%BB%9C%E7%BC%96%E7%A8%8B%E4%B8%AD%E7%9A%84fd"><span class="nav-number">1.5.2.</span> <span class="nav-text">unix网络编程中的fd</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BF%A1%E5%8F%B7%E9%A9%B1%E5%8A%A8IO-SIGIO"><span class="nav-number">1.6.</span> <span class="nav-text">信号驱动IO(SIGIO)</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%BC%82%E6%AD%A5IO-AIO"><span class="nav-number">1.7.</span> <span class="nav-text">异步IO(AIO)</span></a></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

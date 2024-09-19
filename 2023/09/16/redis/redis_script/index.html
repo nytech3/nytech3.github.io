@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="工作流程">
+<meta property="og:type" content="article">
+<meta property="og:title" content="源码阅读(十一)-Redis中的script、eval">
+<meta property="og:url" content="https://nytech3.github.io/2023/09/16/redis/redis_script/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="工作流程">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2023-09-16T10:00:00.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:57.000Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="c">
+<meta property="article:tag" content="redis">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/2023/09/16/redis/redis_script/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>源码阅读(十一)-Redis中的script、eval | nytech</title>
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/2023/09/16/redis/redis_script/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          源码阅读(十一)-Redis中的script、eval
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：2023-09-16 18:00:00" itemprop="dateCreated datePublished" datetime="2023-09-16T18:00:00+08:00">2023-09-16</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/technology/" itemprop="url" rel="index"><span itemprop="name">technology</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/2023/09/16/redis/redis_script/" class="post-meta-item leancloud_visitors" data-flag-title="源码阅读(十一)-Redis中的script、eval" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<h1 id="工作流程"><a href="#工作流程" class="headerlink" title="工作流程"></a>工作流程</h1><span id="more"></span>
+<h1 id="源码解析"><a href="#源码解析" class="headerlink" title="源码解析"></a>源码解析</h1><h2 id="EVAL"><a href="#EVAL" class="headerlink" title="EVAL"></a>EVAL</h2><p>Redis提供了执行Lua脚本的能力，它允许你使用Lua编程语言来编写脚本并在Redis服务器上执行。<br>这个功能可以用来实现原子性操作（atomic operations），避免了在客户端和服务器之间进行多次通信。<br>Lua脚本在Redis中执行是原子性的，这意味着在脚本执行的过程中，不会有其他命令插入，这就避免了一些并发问题。<br>以下是一个简单的Lua脚本示例，这个脚本的作用是将一个键的值增加1：</p>
+<figure class="highlight lua"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">local</span> value = redis.call(<span class="string">&#x27;GET&#x27;</span>, KEYS[<span class="number">1</span>])</span><br><span class="line">value = <span class="built_in">tonumber</span>(value)</span><br><span class="line"><span class="keyword">return</span> redis.call(<span class="string">&#x27;SET&#x27;</span>, KEYS[<span class="number">1</span>], value + <span class="number">1</span>)</span><br></pre></td></tr></table></figure>
+<p>你可以使用EVAL命令来执行这个脚本： (在这个命令中，EVAL后面的第一个参数是脚本内容，第二个参数是键的数量，后面的参数是键的名称。)</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">EVAL <span class="string">&quot;local value = redis.call(&#x27;GET&#x27;, KEYS[1]) \n value = tonumber(value) \n return redis.call(&#x27;SET&#x27;, KEYS[1], value + 1)&quot;</span> <span class="number">1</span> mykey</span><br></pre></td></tr></table></figure>
+<p>你也可以使用ARGV参数来传递参数给脚本。以下是一个例子：</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">EVAL <span class="string">&quot;return redis.call(&#x27;RPUSH&#x27;, KEYS[1], ARGV[1])&quot;</span> <span class="number">1</span> mylist myvalue</span><br></pre></td></tr></table></figure>
+<p>在脚本中，你可以使用KEYS数组来获取键的名称，使用ARGV数组来获取参数。请注意，Lua数组的索引从1开始，不是从0开始。</p>
+<blockquote>
+<p>虽然在执行EVAL时可以只使用key或者arg，但实际上，KEYS和ARGV在Redis Lua脚本中起到的是不同的作用。 KEYS数组用于存储传入脚本的键名，这些键是你在脚本中需要操作的Redis数据结构。而ARGV数组用于存储除键名以外的其他参数。 你可以选择只用ARGV，按照惯例，我们通常将需要操作的键名通过KEYS传入，将其他参数通过ARGV传入。这样做也使得代码更加清晰易读。</p>
+</blockquote>
+<h3 id="EVAL-json"><a href="#EVAL-json" class="headerlink" title="EVAL json"></a>EVAL json</h3><figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br></pre></td><td class="code"><pre><span class="line">&#123;</span><br><span class="line">    <span class="string">&quot;EVAL&quot;</span>: &#123;</span><br><span class="line">        <span class="string">&quot;summary&quot;</span>: <span class="string">&quot;Executes a server-side Lua script.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;complexity&quot;</span>: <span class="string">&quot;Depends on the script that is executed.&quot;</span>,</span><br><span class="line">        <span class="string">&quot;group&quot;</span>: <span class="string">&quot;scripting&quot;</span>,</span><br><span class="line">        <span class="string">&quot;since&quot;</span>: <span class="string">&quot;2.6.0&quot;</span>,</span><br><span class="line">        <span class="string">&quot;arity&quot;</span>: <span class="number">-3</span>,</span><br><span class="line">        <span class="string">&quot;function&quot;</span>: <span class="string">&quot;evalCommand&quot;</span>,</span><br><span class="line">        <span class="string">&quot;get_keys_function&quot;</span>: <span class="string">&quot;evalGetKeys&quot;</span>,</span><br><span class="line">        <span class="string">&quot;command_flags&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;NOSCRIPT&quot;</span>,</span><br><span class="line">            <span class="string">&quot;SKIP_MONITOR&quot;</span>,</span><br><span class="line">            <span class="string">&quot;MAY_REPLICATE&quot;</span>,</span><br><span class="line">            <span class="string">&quot;NO_MANDATORY_KEYS&quot;</span>,</span><br><span class="line">            <span class="string">&quot;STALE&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;acl_categories&quot;</span>: [</span><br><span class="line">            <span class="string">&quot;SCRIPTING&quot;</span></span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;key_specs&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;notes&quot;</span>: <span class="string">&quot;We cannot tell how the keys will be used so we assume the worst, RW and UPDATE&quot;</span>,</span><br><span class="line">                <span class="string">&quot;flags&quot;</span>: [</span><br><span class="line">                    <span class="string">&quot;RW&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;ACCESS&quot;</span>,</span><br><span class="line">                    <span class="string">&quot;UPDATE&quot;</span></span><br><span class="line">                ],</span><br><span class="line">                <span class="string">&quot;begin_search&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;index&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;pos&quot;</span>: <span class="number">2</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;,</span><br><span class="line">                <span class="string">&quot;find_keys&quot;</span>: &#123;</span><br><span class="line">                    <span class="string">&quot;keynum&quot;</span>: &#123;</span><br><span class="line">                        <span class="string">&quot;keynumidx&quot;</span>: <span class="number">0</span>,</span><br><span class="line">                        <span class="string">&quot;firstkey&quot;</span>: <span class="number">1</span>,</span><br><span class="line">                        <span class="string">&quot;step&quot;</span>: <span class="number">1</span></span><br><span class="line">                    &#125;</span><br><span class="line">                &#125;</span><br><span class="line">            &#125;</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;arguments&quot;</span>: [</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;script&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span></span><br><span class="line">            &#125;,</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;numkeys&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;integer&quot;</span></span><br><span class="line">            &#125;,</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;key&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;key&quot;</span>,</span><br><span class="line">                <span class="string">&quot;key_spec_index&quot;</span>: <span class="number">0</span>,</span><br><span class="line">                <span class="string">&quot;optional&quot;</span>: <span class="literal">true</span>,</span><br><span class="line">                <span class="string">&quot;multiple&quot;</span>: <span class="literal">true</span></span><br><span class="line">            &#125;,</span><br><span class="line">            &#123;</span><br><span class="line">                <span class="string">&quot;name&quot;</span>: <span class="string">&quot;arg&quot;</span>,</span><br><span class="line">                <span class="string">&quot;type&quot;</span>: <span class="string">&quot;string&quot;</span>,</span><br><span class="line">                <span class="string">&quot;optional&quot;</span>: <span class="literal">true</span>,</span><br><span class="line">                <span class="string">&quot;multiple&quot;</span>: <span class="literal">true</span></span><br><span class="line">            &#125;</span><br><span class="line">        ],</span><br><span class="line">        <span class="string">&quot;reply_schema&quot;</span>: &#123;</span><br><span class="line">            <span class="string">&quot;description&quot;</span>: <span class="string">&quot;Return value depends on the script that is executed&quot;</span></span><br><span class="line">        &#125;</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+
+
+<h2 id="代码分析"><a href="#代码分析" class="headerlink" title="代码分析"></a>代码分析</h2><h3 id="EVAL-1"><a href="#EVAL-1" class="headerlink" title="EVAL"></a>EVAL</h3><p>-&gt; evalCommand :</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">evalCommand</span><span class="params">(client *c)</span> </span>&#123;</span><br><span class="line">    <span class="comment">/* Explicitly feed monitor here so that lua commands appear after their</span></span><br><span class="line"><span class="comment">     * script command. */</span></span><br><span class="line">    <span class="comment">/* replicationFeedMonitors函数用于将命令传递给所有监视器（monitor）。在这里，我们在执行Lua脚本之前将相关命令传给监视器，以便监视器能够在脚本执行之后看到这些命令。 */</span></span><br><span class="line">    replicationFeedMonitors(c,server.monitors,c-&gt;db-&gt;id,c-&gt;argv,c-&gt;argc);</span><br><span class="line">    <span class="keyword">if</span> (!(c-&gt;flags &amp; CLIENT_LUA_DEBUG))</span><br><span class="line">        <span class="comment">/* 检查客户端是否处于Lua调试模式。如果不是，则调用evalGenericCommand函数执行Lua脚本。这个函数的第二个参数是0，表示这不是一个EVALSHA命令（EVALSHA命令会使用SHA1校验和来引用脚本，而不是直接传递脚本内容）。 */</span></span><br><span class="line">        evalGenericCommand(c,<span class="number">0</span>);</span><br><span class="line">    <span class="keyword">else</span></span><br><span class="line">        <span class="comment">/* 如果客户端处于Lua调试模式，那么我们调用evalGenericCommandWithDebugging函数，这个函数会在执行脚本的同时进行调试。 */</span></span><br><span class="line">        evalGenericCommandWithDebugging(c,<span class="number">0</span>);</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+<blockquote>
+<p>当服务器收到一个SCRIPT DEBUG命令时，它会开启CLIENT_LUA_DEBUG模式。例如： <code>SCRIPT DEBUG YES</code>, 在这个命令执行后，后续的Lua脚本执行会在调试模式下进行。 这个功能主要是为了Redis的开发和调试使用，它可能会影响Redis的性能，不建议在生产环境中使用。而且，开启CLIENT_LUA_DEBUG模式后，服务器在每次执行Lua脚本时都会打印一些调试信息。</p>
+</blockquote>
+<p>-&gt; evalCommand -&gt; evalGenericCommand:</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br><span class="line">52</span><br><span class="line">53</span><br><span class="line">54</span><br><span class="line">55</span><br><span class="line">56</span><br><span class="line">57</span><br><span class="line">58</span><br><span class="line">59</span><br><span class="line">60</span><br><span class="line">61</span><br><span class="line">62</span><br><span class="line">63</span><br><span class="line">64</span><br><span class="line">65</span><br><span class="line">66</span><br><span class="line">67</span><br><span class="line">68</span><br><span class="line">69</span><br><span class="line">70</span><br><span class="line">71</span><br><span class="line">72</span><br><span class="line">73</span><br><span class="line">74</span><br><span class="line">75</span><br><span class="line">76</span><br><span class="line">77</span><br><span class="line">78</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">void</span> <span class="title">evalGenericCommand</span><span class="params">(client *c, <span class="keyword">int</span> evalsha)</span> </span>&#123;</span><br><span class="line">    lua_State *lua = lctx.lua; <span class="comment">// 获取Lua环境</span></span><br><span class="line">    <span class="keyword">char</span> funcname[<span class="number">43</span>];  <span class="comment">// 用于存储Lua函数名的数组</span></span><br><span class="line">    <span class="keyword">long</span> <span class="keyword">long</span> numkeys; <span class="comment">// 存储键的数量</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Get the number of arguments that are keys */</span></span><br><span class="line">    <span class="comment">// 从命令中获取键的数量</span></span><br><span class="line">    <span class="keyword">if</span> (getLongLongFromObjectOrReply(c,c-&gt;argv[<span class="number">2</span>],&amp;numkeys,<span class="literal">NULL</span>) != C_OK)</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    <span class="comment">// 检查键的数量是否大于参数的数量</span></span><br><span class="line">    <span class="keyword">if</span> (numkeys &gt; (c-&gt;argc - <span class="number">3</span>)) &#123;</span><br><span class="line">        addReplyError(c,<span class="string">&quot;Number of keys can&#x27;t be greater than number of args&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125; <span class="keyword">else</span> <span class="keyword">if</span> (numkeys &lt; <span class="number">0</span>) &#123; <span class="comment">// 检查键的数量是否小于0</span></span><br><span class="line">        addReplyError(c,<span class="string">&quot;Number of keys can&#x27;t be negative&quot;</span>);</span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    <span class="comment">// 生成Lua函数名</span></span><br><span class="line">    <span class="keyword">if</span> (c-&gt;cur_script) &#123;</span><br><span class="line">        funcname[<span class="number">0</span>] = <span class="string">&#x27;f&#x27;</span>, funcname[<span class="number">1</span>] = <span class="string">&#x27;_&#x27;</span>;</span><br><span class="line">        <span class="built_in">memcpy</span>(funcname+<span class="number">2</span>, dictGetKey(c-&gt;cur_script), <span class="number">40</span>);</span><br><span class="line">        funcname[<span class="number">42</span>] = <span class="string">&#x27;\0&#x27;</span>;</span><br><span class="line">    &#125; <span class="keyword">else</span></span><br><span class="line">        evalCalcFunctionName(evalsha, c-&gt;argv[<span class="number">1</span>]-&gt;ptr, funcname);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Push the pcall error handler function on the stack. */</span></span><br><span class="line">    <span class="comment">// 将错误处理函数压入Lua栈</span></span><br><span class="line">    lua_getglobal(lua, <span class="string">&quot;__redis__err__handler&quot;</span>);</span><br><span class="line"></span><br><span class="line">    <span class="comment">/* Try to lookup the Lua function */</span></span><br><span class="line"></span><br><span class="line">    <span class="comment">// 尝试查找Lua函数</span></span><br><span class="line">    lua_getfield(lua, LUA_REGISTRYINDEX, funcname);</span><br><span class="line">    <span class="keyword">if</span> (lua_isnil(lua,<span class="number">-1</span>)) &#123; <span class="comment">// 如果函数不存在</span></span><br><span class="line">        lua_pop(lua,<span class="number">1</span>); <span class="comment">/* remove the nil from the stack */</span> <span class="comment">// 从Lua栈中弹出nil</span></span><br><span class="line">        <span class="comment">/* Function not defined... let&#x27;s define it if we have the</span></span><br><span class="line"><span class="comment">         * body of the function. If this is an EVALSHA call we can just</span></span><br><span class="line"><span class="comment">         * return an error. */</span></span><br><span class="line">        <span class="comment">// 如果这是一个EVALSHA调用，直接返回错误</span></span><br><span class="line">        <span class="keyword">if</span> (evalsha) &#123;</span><br><span class="line">            lua_pop(lua,<span class="number">1</span>); <span class="comment">/* remove the error handler from the stack. */</span> <span class="comment">// 从Lua栈中移除错误处理函数</span></span><br><span class="line">            addReplyErrorObject(c, shared.noscripterr);</span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 如果函数的主体存在，尝试创建函数</span></span><br><span class="line">        <span class="keyword">if</span> (luaCreateFunction(c,c-&gt;argv[<span class="number">1</span>]) == <span class="literal">NULL</span>) &#123;</span><br><span class="line">            lua_pop(lua,<span class="number">1</span>); <span class="comment">/* remove the error handler from the stack. */</span> <span class="comment">// 从Lua栈中移除错误处理函数</span></span><br><span class="line">            <span class="comment">/* The error is sent to the client by luaCreateFunction()</span></span><br><span class="line"><span class="comment">             * itself when it returns NULL. */</span></span><br><span class="line">            <span class="keyword">return</span>;</span><br><span class="line">        &#125;</span><br><span class="line">        <span class="comment">// 现在，下面这行代码保证能返回非nil</span></span><br><span class="line">        <span class="comment">/* Now the following is guaranteed to return non nil */</span></span><br><span class="line">        lua_getfield(lua, LUA_REGISTRYINDEX, funcname);</span><br><span class="line">        serverAssert(!lua_isnil(lua,<span class="number">-1</span>));</span><br><span class="line">    &#125;</span><br><span class="line"></span><br><span class="line">    <span class="keyword">char</span> *lua_cur_script = funcname + <span class="number">2</span>;</span><br><span class="line">    dictEntry *de = c-&gt;cur_script;</span><br><span class="line">    <span class="keyword">if</span> (!de)</span><br><span class="line">        de = dictFind(lctx.lua_scripts, lua_cur_script);</span><br><span class="line">    luaScript *l = dictGetVal(de);</span><br><span class="line">    <span class="keyword">int</span> ro = c-&gt;cmd-&gt;proc == evalRoCommand || c-&gt;cmd-&gt;proc == evalShaRoCommand;</span><br><span class="line"></span><br><span class="line">    scriptRunCtx rctx;</span><br><span class="line">    <span class="keyword">if</span> (scriptPrepareForRun(&amp;rctx, lctx.lua_client, c, lua_cur_script, l-&gt;flags, ro) != C_OK) &#123;</span><br><span class="line">        lua_pop(lua,<span class="number">2</span>); <span class="comment">/* Remove the function and error handler. */</span></span><br><span class="line">        <span class="keyword">return</span>;</span><br><span class="line">    &#125;</span><br><span class="line">    rctx.flags |= SCRIPT_EVAL_MODE; <span class="comment">/* mark the current run as EVAL (as opposed to FCALL) so we&#x27;ll</span></span><br><span class="line"><span class="comment">                                      get appropriate error messages and logs */</span></span><br><span class="line">    <span class="comment">// 执行lua脚本</span></span><br><span class="line">    luaCallFunction(&amp;rctx, lua, c-&gt;argv+<span class="number">3</span>, numkeys, c-&gt;argv+<span class="number">3</span>+numkeys, c-&gt;argc<span class="number">-3</span>-numkeys, ldb.active);</span><br><span class="line">    lua_pop(lua,<span class="number">1</span>); <span class="comment">/* Remove the error handler. */</span></span><br><span class="line">    scriptResetRun(&amp;rctx);</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/2023/09/16/redis/redis_script/" title="源码阅读(十一)-Redis中的script、eval">https://nytech3.github.io/2023/09/16/redis/redis_script/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/c/" rel="tag"># c</a>
+              <a href="/tags/redis/" rel="tag"># redis</a>
+          </div>
+
+        
+
+
+        
+    <div class="post-nav">
+      <div class="post-nav-item">
+    <a href="/2023/09/11/redis/redis_set/" rel="prev" title="源码阅读(二)-Redis中的SET命令">
+      <i class="fa fa-chevron-left"></i> 源码阅读(二)-Redis中的SET命令
+    </a></div>
+      <div class="post-nav-item">
+    <a href="/2023/09/16/redis/redis_hset/" rel="next" title="源码阅读(三)-Redis中的HSET命令">
+      源码阅读(三)-Redis中的HSET命令 <i class="fa fa-chevron-right"></i>
+    </a></div>
+    </div>
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%B7%A5%E4%BD%9C%E6%B5%81%E7%A8%8B"><span class="nav-number">1.</span> <span class="nav-text">工作流程</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%BA%90%E7%A0%81%E8%A7%A3%E6%9E%90"><span class="nav-number">2.</span> <span class="nav-text">源码解析</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#EVAL"><span class="nav-number">2.1.</span> <span class="nav-text">EVAL</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#EVAL-json"><span class="nav-number">2.1.1.</span> <span class="nav-text">EVAL json</span></a></li></ol></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E5%88%86%E6%9E%90"><span class="nav-number">2.2.</span> <span class="nav-text">代码分析</span></a><ol class="nav-child"><li class="nav-item nav-level-3"><a class="nav-link" href="#EVAL-1"><span class="nav-number">2.2.1.</span> <span class="nav-text">EVAL</span></a></li></ol></li></ol></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>

@@ -1,0 +1,1933 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=2">
+<meta name="theme-color" content="#222">
+<meta name="generator" content="Hexo 5.4.0">
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+<script id="hexo-configurations">
+    var NexT = window.NexT || {};
+    var CONFIG = {"hostname":"nytech3.github.io","root":"/","scheme":"Gemini","version":"7.8.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12,"onmobile":false},"copycode":{"enable":false,"show_result":false,"style":null},"back2top":{"enable":true,"sidebar":false,"scrollpercent":false},"bookmark":{"enable":false,"color":"#222","save":"auto"},"fancybox":false,"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"algolia":{"hits":{"per_page":10},"labels":{"input_placeholder":"Search for Posts","hits_empty":"We didn't find any results for the search: ${query}","hits_stats":"${hits} results found in ${time} ms"}},"localsearch":{"enable":false,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false},"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"slideDownIn","post_body":"slideDownIn","coll_header":"slideLeftIn","sidebar":"slideUpIn"}}};
+  </script>
+
+  <meta name="description" content="JVM JVM虚拟机内存模型   JMM模型   对象的创建   指针碰撞&amp;空闲列表    对象的内存布局    对象的访问定位   逃逸分析 类加载机制 双亲委派原理以及优点 TOMCAT打破双亲委派原因">
+<meta property="og:type" content="article">
+<meta property="og:title" content="常见面试题">
+<meta property="og:url" content="https://nytech3.github.io/1997/01/01/interview/%E9%9D%A2%E8%AF%95%E9%A2%98/index.html">
+<meta property="og:site_name" content="nytech">
+<meta property="og:description" content="JVM JVM虚拟机内存模型   JMM模型   对象的创建   指针碰撞&amp;空闲列表    对象的内存布局    对象的访问定位   逃逸分析 类加载机制 双亲委派原理以及优点 TOMCAT打破双亲委派原因">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="1997-01-01T09:00:00.000Z">
+<meta property="article:modified_time" content="2024-09-19T07:25:56.994Z">
+<meta property="article:author" content="nytech">
+<meta property="article:tag" content="面试">
+<meta name="twitter:card" content="summary">
+
+<link rel="canonical" href="https://nytech3.github.io/1997/01/01/interview/%E9%9D%A2%E8%AF%95%E9%A2%98/">
+
+
+<script id="page-configurations">
+  // https://hexo.io/docs/variables.html
+  CONFIG.page = {
+    sidebar: "",
+    isHome : false,
+    isPost : true,
+    lang   : 'zh-CN'
+  };
+</script>
+
+  <title>常见面试题 | nytech</title><meta name="robots" content="noindex">
+  
+
+
+
+
+
+
+  <noscript>
+  <style>
+  .use-motion .brand,
+  .use-motion .menu-item,
+  .sidebar-inner,
+  .use-motion .post-block,
+  .use-motion .pagination,
+  .use-motion .comments,
+  .use-motion .post-header,
+  .use-motion .post-body,
+  .use-motion .collection-header { opacity: initial; }
+
+  .use-motion .site-title,
+  .use-motion .site-subtitle {
+    opacity: initial;
+    top: initial;
+  }
+
+  .use-motion .logo-line-before i { left: initial; }
+  .use-motion .logo-line-after i { right: initial; }
+  </style>
+</noscript>
+
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage">
+  <div class="container use-motion">
+    <div class="headband"></div>
+
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏">
+      <span class="toggle-line toggle-line-first"></span>
+      <span class="toggle-line toggle-line-middle"></span>
+      <span class="toggle-line toggle-line-last"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <span class="logo-line-before"><i></i></span>
+      <h1 class="site-title">nytech</h1>
+      <span class="logo-line-after"><i></i></span>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+    </div>
+  </div>
+</div>
+
+
+
+
+<nav class="site-nav">
+  <ul id="menu" class="main-menu menu">
+        <li class="menu-item menu-item-home">
+
+    <a href="/" rel="section"><i class="home fa-fw"></i>首页</a>
+
+  </li>
+        <li class="menu-item menu-item-about">
+
+    <a href="/about/" rel="section"><i class="user fa-fw"></i>关于</a>
+
+  </li>
+        <li class="menu-item menu-item-tags">
+
+    <a href="/tags/" rel="section"><i class="tags fa-fw"></i>标签<span class="badge">24</span></a>
+
+  </li>
+        <li class="menu-item menu-item-categories">
+
+    <a href="/categories/" rel="section"><i class="th fa-fw"></i>分类<span class="badge">3</span></a>
+
+  </li>
+        <li class="menu-item menu-item-archives">
+
+    <a href="/archives/" rel="section"><i class="archive fa-fw"></i>归档<span class="badge">140</span></a>
+
+  </li>
+        <li class="menu-item menu-item-following">
+
+    <a href="/following/" rel="section"><i class="following fa-fw"></i>关注</a>
+
+  </li>
+        <li class="menu-item menu-item-tool">
+
+    <a href="/tool/" rel="section"><i class="tool fa-fw"></i>工具</a>
+
+  </li>
+        <li class="menu-item menu-item-dailyguide">
+
+    <a href="/dailyguide" rel="section"><i class="dailyguide fa-fw"></i>每日导读</a>
+
+  </li>
+        <li class="menu-item menu-item-book">
+
+    <a href="/book" rel="section"><i class="book fa-fw"></i>书籍</a>
+
+  </li>
+  </ul>
+</nav>
+
+
+
+
+</div>
+    </header>
+
+    
+  <div class="back-to-top">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/nytech3" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+
+    <main class="main">
+      <div class="main-inner">
+        <div class="content-wrap">
+          
+
+          <div class="content post posts-expand">
+            
+
+    
+  
+  
+  <article itemscope itemtype="http://schema.org/Article" class="post-block" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://nytech3.github.io/1997/01/01/interview/%E9%9D%A2%E8%AF%95%E9%A2%98/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/author.jpg">
+      <meta itemprop="name" content="nytech">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="nytech">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          常见面试题
+        </h1>
+
+        <div class="post-meta">
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-calendar"></i>
+              </span>
+              <span class="post-meta-item-text">发表于</span>
+
+              <time title="创建时间：1997-01-01 17:00:00" itemprop="dateCreated datePublished" datetime="1997-01-01T17:00:00+08:00">1997-01-01</time>
+            </span>
+            <span class="post-meta-item">
+              <span class="post-meta-item-icon">
+                <i class="far fa-folder"></i>
+              </span>
+              <span class="post-meta-item-text">分类于</span>
+                <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+                  <a href="/categories/%E6%8A%80%E6%9C%AF/" itemprop="url" rel="index"><span itemprop="name">技术</span></a>
+                </span>
+            </span>
+
+          
+            <span id="/1997/01/01/interview/%E9%9D%A2%E8%AF%95%E9%A2%98/" class="post-meta-item leancloud_visitors" data-flag-title="常见面试题" title="阅读次数">
+              <span class="post-meta-item-icon">
+                <i class="fa fa-eye"></i>
+              </span>
+              <span class="post-meta-item-text">阅读次数：</span>
+              <span class="leancloud-visitors-count"></span>
+            </span>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+
+      
+        <!-- ttoc -->
+<h1 id="JVM"><a href="#JVM" class="headerlink" title="JVM"></a>JVM</h1><ol>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/ljd2038/article/details/83146816">JVM虚拟机内存模型</a>  </li>
+<li><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/258393139">JMM模型</a>  </li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/ljd2038/article/details/83146816">对象的创建</a>  </li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/yun_ld/article/details/105103011">指针碰撞&amp;空闲列表</a>   </li>
+<li><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/357690783">对象的内存布局</a>   </li>
+<li><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/357690783">对象的访问定位</a>  </li>
+<li><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/59215831">逃逸分析</a></li>
+<li><a target="_blank" rel="noopener" href="https://segmentfault.com/a/1190000037574626">类加载机制</a></li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/weixin_38055381/article/details/80167881">双亲委派原理以及优点</a></li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/dangwanma6489/article/details/80244981">TOMCAT打破双亲委派原因</a><span id="more"></span></li>
+<li><a target="_blank" rel="noopener" href="https://segmentfault.com/a/1190000023637649">GC回收机制</a></li>
+<li>直接内存(堆外内存)和JAVA堆的使用场景以及优缺点  </li>
+<li><a target="_blank" rel="noopener" href="https://zhuanlan.zhihu.com/p/357690783">CMS</a></li>
+<li>新生代GC触发时机</li>
+<li>老年代GC触发时机</li>
+<li>可达性分析</li>
+<li>volatile</li>
+<li><a target="_blank" rel="noopener" href="https://www.cnblogs.com/bbgs-xc/p/12731769.html">禁止指令重排的原因</a></li>
+<li>synchronized</li>
+<li>final</li>
+<li>concurrent</li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/weixin_42447959/article/details/81637909">JVM调优</a></li>
+<li>java中会存在内存泄漏吗，请简单描述。</li>
+<li>64位JVM中，int的长度是多少位</li>
+<li>Serial 与 Parallel GC 之间的不同之处</li>
+<li>JVM 选项 -XX:+UseCompressedOops 有什么作用</li>
+<li>32 位 JVM 和 64 位 JVM 的最大堆内存分别是多少</li>
+<li>JRE、JDK、JVM 及 JIT 之间有什么不同</li>
+<li>你能保证 GC 执行吗</li>
+<li>Java的对象结构</li>
+<li>调优命令有哪些</li>
+<li>你知道哪些JVM性能调优</li>
+<li>CMS与G1的区别</li>
+<li>CMS与ZGC的区别</li>
+<li>Java内存区域</li>
+<li>说一下 JVM 的主要组成部分及其作用？</li>
+<li>说一下 JVM 运行时数据区</li>
+<li>深拷贝和浅拷贝</li>
+<li>说一下堆栈的区别？</li>
+<li>队列和栈是什么？有什么区别？</li>
+<li>HotSpot虚拟机对象探秘</li>
+<li>对象的创建</li>
+<li>为对象分配内存</li>
+<li>处理并发安全问题</li>
+<li>对象的访问定位</li>
+<li>句柄访问</li>
+<li>直接指针</li>
+<li>内存溢出异常</li>
+<li>Java会存在内存泄漏吗？请简单描述</li>
+<li>垃圾收集器</li>
+<li>简述Java垃圾回收机制</li>
+<li>GC是什么？为什么要GC</li>
+<li>垃圾回收的优点和原理。并考虑2种回收机制</li>
+<li>垃圾回收器的基本原理是什么？垃圾回收器可以马上回收内存吗？有什么办法主动通知虚拟机进行垃圾回收？</li>
+<li>Java 中都有哪些引用类型？</li>
+<li>怎么判断对象是否可以被回收？</li>
+<li>在Java中，对象什么时候可以被垃圾回收</li>
+<li>JVM中的永久代中会发生垃圾回收吗</li>
+<li>说一下 JVM 有哪些垃圾回收算法？</li>
+<li>标记-清除算法</li>
+<li>复制算法</li>
+<li>标记-整理算法</li>
+<li>分代收集算法</li>
+<li>说一下 JVM 有哪些垃圾回收器？</li>
+<li>详细介绍一下 CMS 垃圾回收器？</li>
+<li>新生代垃圾回收器和老年代垃圾回收器都有哪些？有什么区别？</li>
+<li>简述分代垃圾回收器是怎么工作的？</li>
+<li>内存分配策略</li>
+<li>简述java内存分配与回收策率以及Minor GC和Major GC</li>
+<li>对象优先在 Eden 区分配</li>
+<li>大对象直接进入老年代</li>
+<li>长期存活对象将进入老年代</li>
+<li>虚拟机类加载机制</li>
+<li>简述java类加载机制?</li>
+<li>描述一下JVM加载Class文件的原理机制</li>
+<li>什么是类加载器，类加载器有哪些?</li>
+<li>说一下类装载的执行过程？</li>
+<li>什么是双亲委派模型？</li>
+<li>说一下 JVM 调优的工具？</li>
+<li>常用的 JVM 调优的参数都有哪些？</li>
+<li>如何判断一个类是无用的类</li>
+<li>如何判断一个常量是废弃常量</li>
+</ol>
+<h1 id="JAVA"><a href="#JAVA" class="headerlink" title="JAVA"></a>JAVA</h1><ol>
+<li>String</li>
+<li>Java中的Reference </li>
+<li>HashMap &amp; ConcurrentHashMap 实现原理</li>
+<li>ConcurrentHashMap 树化</li>
+<li>为什么是8个树化</li>
+<li>ConcurrentHashMap 扩容时机以及如何扩容</li>
+<li>ConcurrentHashMap 扩容为什么是2的倍数</li>
+<li>ConcurrentHashMap 加锁原理</li>
+<li>ConcurrentHashMap 重hash，为什么不能使用头插法</li>
+<li>ConcurrentHashMap 负载因子</li>
+<li>HashMap 为什么使用红黑树</li>
+<li>ArrayList和LinkedList区别</li>
+<li>ArrayList和CopyOnWriteArrayList</li>
+<li>CopyOnWriteArrayList与SynchronizedList区别</li>
+<li>JAVA多线程的生命周期</li>
+<li>为什么要有多线程,只有多进程不可以吗</li>
+<li>JAVA如何实现多线程的(Thread,Runnable,Callable)</li>
+<li>为什么要有线程池</li>
+<li>线程间通信的方法</li>
+<li>wait,join,sleep 原理以及区别</li>
+<li>synchronized原理</li>
+<li>什么是锁升级</li>
+<li>ReentrantLock原理</li>
+<li>可重入锁是什么</li>
+<li>独享锁/共享锁区别</li>
+<li>乐观锁/悲观锁区别</li>
+<li>自旋锁/自适应自旋锁</li>
+<li>CountDownLatch原理</li>
+<li>CyclicBarrier原理</li>
+<li>Semaphore 原理</li>
+<li>Exchanger 原理</li>
+<li>synchronized、ReentrantLock区别</li>
+<li>ReentrantLock中的Condition</li>
+<li>ReentrantLock中公平锁和非公平锁的区别</li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/yangcheng33/article/details/47708631">ReentrantLock中的锁中断原理lock.lockInterruptibly()</a></li>
+<li>Atomic原理</li>
+<li>volatile 原理</li>
+<li>ThreadLocal 原理</li>
+<li>JAVA常见的四种线程池</li>
+<li>ThreadPoolExecutor的参数</li>
+<li>ThreadPoolExecutor的原理</li>
+<li>ThreadPoolExecutor阻塞队列有哪几种</li>
+<li><a target="_blank" rel="noopener" href="https://www.cnblogs.com/shemlo/p/11605681.html"><strong>monitor机制</strong></a></li>
+<li><a target="_blank" rel="noopener" href="https://zh.wikipedia.org/wiki/OSGi">OSGi(Open Service Gateway Initiative) 动态模型系统</a></li>
+<li>JAVA SPI</li>
+<li>什么是OOP</li>
+<li>什么是面向对象</li>
+<li>类与对象的关系</li>
+<li>Java中有几种基本数据类型</li>
+<li>在布尔表达式中使用浮点型数据会有什么问题</li>
+<li>Java常用包有那些</li>
+<li>java中有没有指针</li>
+<li>java中是值传递引用传递</li>
+<li>假设把实例化的数组的变量当成方法参数，当方法执行的时候改变了数组内的元素，那么在方法外，数组元素有发生改变吗</li>
+<li>Static关键字有什么作用</li>
+<li>static的实现</li>
+<li>Final的实现</li>
+<li>JAVA为什么需要接口</li>
+<li>接口和抽象类的区别</li>
+<li>Java中的异常</li>
+<li>Error与Exception</li>
+<li>Java的io流分为哪两种</li>
+<li>字节流与字符流的区别</li>
+<li>final、finalize()、finally</li>
+<li>finally中的return是否会覆盖代码中的其他return</li>
+<li>notify与notifyAll区别(结合monitor原理)</li>
+<li>如果对象的引用被置为null，垃圾收集器是否会立即释放对象占用的内存</li>
+<li>何为编程</li>
+<li>什么是Java</li>
+<li>jdk1.5之后的三大版本</li>
+<li>JVM、JRE和JDK的关系</li>
+<li>什么是跨平台性？原理是什么</li>
+<li>Java语言有哪些特点</li>
+<li>什么是字节码？采用字节码的最大好处是什么</li>
+<li>Java和C++的区别</li>
+<li>Oracle JDK 和 OpenJDK 的对比</li>
+<li>数据类型</li>
+<li>Java有哪些数据类型</li>
+<li>switch 是否能作用在 byte 上，是否能作用在 long 上，是否能作用在 String 上</li>
+<li>用最有效率的方法计算 2 乘以 8</li>
+<li>Math.round(11.5) 等于多少？Math.round(-11.5)等于多少</li>
+<li>float f=3.4;是否正确</li>
+<li>short s1 = 1; s1 = s1 + 1;有错吗?short s1 = 1; s1 += 1;有错吗</li>
+<li>Java语言采用何种编码方案？有何特点？</li>
+<li>什么Java注释</li>
+<li>访问修饰符 public,private,protected,以及不写（默认）时的区别</li>
+<li>运算符</li>
+<li>&amp;和&amp;&amp;的区别</li>
+<li>关键字</li>
+<li>Java 有没有 goto</li>
+<li>final 有什么用？</li>
+<li>final finally finalize区别</li>
+<li>this关键字的用法</li>
+<li>super关键字的用法</li>
+<li>this与super的区别</li>
+<li>static存在的主要意义</li>
+<li>static的独特之处</li>
+<li> static应用场景</li>
+<li> static注意事项</li>
+<li> 流程控制语句</li>
+<li>break ,continue ,return 的区别及作用</li>
+<li>在 Java 中，如何跳出当前的多重嵌套循环</li>
+<li>面向对象</li>
+<li>面向对象概述</li>
+<li>面向对象和面向过程的区别</li>
+<li>面向对象三大特性</li>
+<li>面向对象的特征有哪些方面</li>
+<li>什么是多态机制？Java语言是如何实现多态的？</li>
+<li>面向对象五大基本原则是什么（可选）</li>
+<li>抽象类和接口的对比</li>
+<li>普通类和抽象类有哪些区别？</li>
+<li>抽象类能使用 final 修饰吗？</li>
+<li>创建一个对象用什么关键字？对象实例与对象引用有何不同？</li>
+<li>成员变量与局部变量的区别有哪些</li>
+<li>在Java中定义一个不做事且没有参数的构造方法的作用</li>
+<li>在调用子类构造方法之前会先调用父类没有参数的构造方法，其目的是？</li>
+<li>一个类的构造方法的作用是什么？若一个类没有声明构造方法，改程序能正确执行吗？为什么？</li>
+<li>构造方法有哪些特性？</li>
+<li>静态变量和实例变量区别</li>
+<li>静态变量与普通变量区别</li>
+<li>静态方法和实例方法有何不同？</li>
+<li>在一个静态方法内调用一个非静态成员为什么是非法的？</li>
+<li>什么是方法的返回值？返回值的作用是什么？</li>
+<li>什么是内部类？</li>
+<li>内部类的分类有哪些</li>
+<li>静态内部类</li>
+<li>成员内部类</li>
+<li>局部内部类</li>
+<li>匿名内部类</li>
+<li>内部类的优点</li>
+<li>内部类有哪些应用场景</li>
+<li>局部内部类和匿名内部类访问局部变量的时候，为什么变量必须要加上final？</li>
+<li>内部类相关，看程序说出运行结果</li>
+<li>重写与重载</li>
+<li>构造器（constructor）是否可被重写（override）</li>
+<li>重载（Overload）和重写（Override）的区别。重载的方法能否根据返回类型进行区分？</li>
+<li>== 和 equals 的区别是什么</li>
+<li>hashCode 与 equals (重要)</li>
+<li>对象的相等与指向他们的引用相等，两者有什么不同？</li>
+<li>值传递</li>
+<li>当一个对象被当作参数传递到一个方法后，此方法可改变这个对象的属性，并可返回变化后的结果，那么这里到底是值传递还是引用传递</li>
+<li>为什么 Java 中只有值传递</li>
+<li>值传递和引用传递有什么区别</li>
+<li>JDK 中常用的包有哪些</li>
+<li>import java和javax有什么区别</li>
+<li>java 中 IO 流分为几种?</li>
+<li>BIO,NIO,AIO 有什么区别?</li>
+<li>Files的常用方法都有哪些？</li>
+<li>什么是反射机制？</li>
+<li>反射机制优缺点</li>
+<li>反射机制的应用场景有哪些？</li>
+<li>Java获取反射的三种方法</li>
+<li>字符型常量和字符串常量的区别</li>
+<li>什么是字符串常量池？</li>
+<li>String 是最基本的数据类型吗</li>
+<li>String有哪些特性</li>
+<li>String为什么是不可变的？</li>
+<li>String真的是不可变的吗？</li>
+<li>是否可以继承 String 类</li>
+<li>String str=”i”与 String str=new String(“i”)一样吗？</li>
+<li>String s = new String(“xyz”);创建了几个字符串对象</li>
+<li>如何将字符串反转？</li>
+<li>数组有没有 length()方法？String 有没有 length()方法</li>
+<li>String 类的常用方法都有那些？</li>
+<li>在使用 HashMap 的时候，用 String 做 key 有什么好处？</li>
+<li>String和StringBuffer、StringBuilder的区别是什么？String为什么是不可变的</li>
+<li>Date相关</li>
+<li>包装类相关</li>
+<li>自动装箱与拆箱</li>
+<li>int 和 Integer 有什么区别</li>
+<li>Integer a= 127 与 Integer b = 127相等吗</li>
+<li>集合容器概述</li>
+<li>什么是集合</li>
+<li>集合的特点</li>
+<li>集合和数组的区别</li>
+<li>使用集合框架的好处</li>
+<li>常用的集合类有哪些？</li>
+<li>List，Set，Map三者的区别？List、Set、Map 是否继承自 Collection 接口？List、Map、Set 三个接口存取元素时，各有什么特点？</li>
+<li>集合框架底层数据结构</li>
+<li>哪些集合类是线程安全的？</li>
+<li>Java集合的快速失败机制 “fail-fast”？fail-fast与fail-safe</li>
+<li>怎么确保一个集合不能被修改？</li>
+<li>Collection接口</li>
+<li>List接口</li>
+<li>迭代器 Iterator 是什么？</li>
+<li>Iterator 怎么使用？有什么特点？</li>
+<li>如何边遍历边移除 Collection 中的元素？</li>
+<li>Iterator 和 ListIterator 有什么区别？</li>
+<li>遍历一个 List 有哪些不同的方式？每种方法的实现原理是什么？Java 中 List 遍历的最佳实践是什么？</li>
+<li>说一下 ArrayList 的优缺点</li>
+<li>如何实现数组和 List 之间的转换？</li>
+<li>ArrayList 和 LinkedList 的区别是什么？</li>
+<li>ArrayList 和 Vector 的区别是什么？</li>
+<li>插入数据时，ArrayList、LinkedList、Vector谁速度较快？阐述 ArrayList、Vector、LinkedList 的存储性能和特性？</li>
+<li>多线程场景下如何使用 ArrayList？</li>
+<li>为什么 ArrayList 的 elementData 加上 transient 修饰？</li>
+<li>List 和 Set 的区别</li>
+<li>说一下 HashSet 的实现原理？</li>
+<li>HashSet如何检查重复？HashSet是如何保证数据不可重复的？</li>
+<li>HashSet与HashMap的区别</li>
+<li>BlockingQueue是什么？</li>
+<li>在 Queue 中 poll()和 remove()有什么区别？</li>
+<li>说一下 HashMap 的实现原理？</li>
+<li>HashMap在JDK1.7和JDK1.8中有哪些不同？HashMap的底层实现</li>
+<li>JDK1.7 VS JDK1.8 比较</li>
+<li>HashMap的put方法的具体流程？</li>
+<li>HashMap的扩容操作是怎么实现的？</li>
+<li>HashMap是怎么解决哈希冲突的？</li>
+<li>什么是哈希？</li>
+<li>什么是哈希冲突？</li>
+<li>HashMap的数据结构</li>
+<li>hash()函数</li>
+<li>JDK1.8新增红黑树</li>
+<li>能否使用任何类作为 Map 的 key？</li>
+<li>为什么HashMap中String、Integer这样的包装类适合作为K？</li>
+<li>如果使用Object作为HashMap的Key，应该怎么办呢？</li>
+<li>HashMap为什么不直接使用hashCode()处理后的哈希值直接作为table的下标？</li>
+<li>HashMap 的长度为什么是2的幂次方</li>
+<li>HashMap 与 HashTable 有什么区别？</li>
+<li>如何决定使用 HashMap 还是 TreeMap？</li>
+<li>HashMap 和 ConcurrentHashMap 的区别</li>
+<li>ConcurrentHashMap 和 Hashtable 的区别？</li>
+<li>ConcurrentHashMap 底层具体实现知道吗？实现原理是什么？</li>
+<li>Array 和 ArrayList 有何区别？</li>
+<li>如何实现 Array 和 List 之间的转换？</li>
+<li>comparable 和 comparator的区别？</li>
+<li>Collection 和 Collections 有什么区别？</li>
+<li>TreeMap 和 TreeSet 在排序时如何比较元素？Collections 工具类中的 sort()方法如何比较元素？</li>
+<li>Java异常架构与异常关键字</li>
+<li>Java异常架构</li>
+<li>Throwable</li>
+<li>Error（错误）</li>
+<li>Exception（异常）</li>
+<li>运行时异常</li>
+<li>编译时异常</li>
+<li>受检异常与非受检异常</li>
+<li>Java异常关键字</li>
+<li>Java异常处理</li>
+<li>声明异常</li>
+<li>抛出异常</li>
+<li>捕获异常</li>
+<li>如何选择异常类型</li>
+<li>常见异常处理方式</li>
+<li>直接抛出异常</li>
+<li>封装异常再抛出</li>
+<li>捕获异常</li>
+<li>自定义异常</li>
+<li>try-catch-finally</li>
+<li>try-with-resource</li>
+<li>Java异常常见面试题</li>
+<li>Error 和 Exception 区别是什么？ </li>
+<li>运行时异常和一般异常(受检异常)区别是什么？</li>
+<li>JVM 是如何处理异常的？</li>
+<li>throw 和 throws 的区别是什么？</li>
+<li>final、finally、finalize 有什么区别？</li>
+<li>NoClassDefFoundError 和 ClassNotFoundException 区别？</li>
+<li>try-catch-finally 中哪个部分可以省略？</li>
+<li>try-catch-finally 中，如果 catch 中 return 了，finally 还会执行吗？</li>
+<li>类 ExampleA 继承 Exception，类 ExampleB 继承ExampleA。</li>
+<li>常见的 RuntimeException 有哪些？</li>
+<li>Java常见异常有哪些</li>
+<li>Java异常处理最佳实践</li>
+<li>异常处理-阿里巴巴Java开发手册</li>
+<li>并发编程的优缺点</li>
+<li>为什么要使用并发编程（并发编程的优点）</li>
+<li>并发编程有什么缺点</li>
+<li>并发编程三要素是什么？在 Java 程序中怎么保证多线程的运行安全？</li>
+<li>并行和并发有什么区别？</li>
+<li>什么是多线程，多线程的优劣？</li>
+<li>线程和进程区别</li>
+<li>什么是线程和进程?</li>
+<li>进程与线程的区别</li>
+<li>什么是上下文切换?</li>
+<li>守护线程和用户线程有什么区别呢？</li>
+<li>如何在 Windows 和 Linux 上查找哪个线程cpu利用率最高？</li>
+<li>什么是线程死锁</li>
+<li>形成死锁的四个必要条件是什么</li>
+<li>如何避免线程死锁</li>
+<li>创建线程的四种方式</li>
+<li>创建线程有哪几种方式？</li>
+<li>说一下 runnable 和 callable 有什么区别？</li>
+<li>线程的 run()和 start()有什么区别？</li>
+<li>为什么我们调用 start() 方法时会执行 run() 方法，为什么我们不能直接调用 run() 方法？</li>
+<li>什么是 Callable 和 Future?</li>
+<li>什么是 FutureTask</li>
+<li>线程的状态和基本操作</li>
+<li>说说线程的生命周期及五种基本状态？</li>
+<li>Java 中用到的线程调度算法是什么？</li>
+<li>什么是线程调度器(Thread Scheduler)和时间分片(Time Slicing )？</li>
+<li>请说出与线程同步以及线程调度相关的方法。</li>
+<li>sleep() 和 wait() 有什么区别？</li>
+<li>你是如何调用 wait() 方法的？使用 if 块还是循环？为什么？</li>
+<li>为什么线程通信的方法 wait(), notify()和 notifyAll()被定义在Object类里？</li>
+<li>为什么 wait(), notify()和 notifyAll()必须在同步方法或者同步块中被调用？</li>
+<li>Thread 类中的 yield 方法有什么作用？</li>
+<li>为什么 Thread 类的 sleep()和 yield ()方法是静态的？</li>
+<li>线程的 sleep()方法和 yield()方法有什么区别？</li>
+<li>如何停止一个正在运行的线程？</li>
+<li>Java 中 interrupted 和 isInterrupted 方法的区别？</li>
+<li>什么是阻塞式方法？</li>
+<li>Java 中你怎样唤醒一个阻塞的线程？</li>
+<li>notify() 和 notifyAll() 有什么区别？</li>
+<li>如何在两个线程间共享数据？</li>
+<li>Java 如何实现多线程之间的通讯和协作？</li>
+<li>同步方法和同步块，哪个是更好的选择？</li>
+<li>什么是线程同步和线程互斥，有哪几种实现方式？</li>
+<li>在监视器(Monitor)内部，是如何做线程同步的？程序应该做哪种级别的同步？</li>
+<li>如果你提交任务时，线程池队列已满，这时会发生什么</li>
+<li>什么叫线程安全？servlet 是线程安全吗?</li>
+<li>在 Java 程序中怎么保证多线程的运行安全？</li>
+<li>你对线程优先级的理解是什么？</li>
+<li>线程类的构造方法、静态块是被哪个线程调用的</li>
+<li>Java 中怎么获取一份线程 dump 文件？你如何在 Java 中获取线程堆栈？</li>
+<li>一个线程运行时发生异常会怎样？</li>
+<li>Java 线程数过多会造成什么异常？</li>
+<li>Java内存模型</li>
+<li>Java中垃圾回收有什么目的？什么时候进行垃圾回收？</li>
+<li>如果对象的引用被置为null，垃圾收集器是否会立即释放对象占用的内存？</li>
+<li>finalize()方法什么时候被调用？析构函数(finalization)的目的是什么？</li>
+<li>重排序与数据依赖性</li>
+<li>为什么代码会重排序？</li>
+<li>as-if-serial规则和happens-before规则的区别</li>
+<li>synchronized 的作用？</li>
+<li>说说自己是怎么使用 synchronized 关键字，在项目中用到了吗</li>
+<li>说一下 synchronized 底层实现原理？</li>
+<li>什么是自旋</li>
+<li>多线程中 synchronized 锁升级的原理是什么？</li>
+<li>线程 B 怎么知道线程 A 修改了变量</li>
+<li>当一个线程进入一个对象的 synchronized 方法 A 之后，其它线程是否可进入此对象的 synchronized 方法 B？</li>
+<li>synchronized、volatile、CAS 比较</li>
+<li>synchronized 和 Lock 有什么区别？</li>
+<li>synchronized 和 ReentrantLock 区别是什么？</li>
+<li>volatile</li>
+<li>volatile 关键字的作用</li>
+<li>Java 中能创建 volatile 数组吗？</li>
+<li>volatile 变量和 atomic 变量有什么不同？</li>
+<li>volatile 能使得一个非原子操作变成原子操作吗？</li>
+<li>volatile 修饰符的有过什么实践？</li>
+<li>synchronized 和 volatile 的区别是什么？</li>
+<li>什么是不可变对象，它对写并发应用有什么帮助？</li>
+<li>Lock简介与初识AQS</li>
+<li>Java Concurrency API 中的 Lock 接口(Lock interface)是什么？对比同步它有什么优势？</li>
+<li>乐观锁和悲观锁的理解及如何实现，有哪些实现方式？</li>
+<li>什么是 CAS</li>
+<li>CAS 的会产生什么问题？</li>
+<li>什么是死锁？</li>
+<li>产生死锁的条件是什么？怎么防止死锁？</li>
+<li>死锁与活锁的区别，死锁与饥饿的区别？</li>
+<li>多线程锁的升级原理是什么？</li>
+<li>AQS(AbstractQueuedSynchronizer)详解与源码分析</li>
+<li>AQS 原理分析</li>
+<li>ReentrantLock(重入锁)实现原理与公平锁非公平锁区别</li>
+<li>什么是可重入锁（ReentrantLock）？</li>
+<li>读写锁ReentrantReadWriteLock源码分析</li>
+<li>ReadWriteLock 是什么</li>
+<li>Condition源码分析与等待通知机制</li>
+<li>LockSupport详解</li>
+<li>并发容器</li>
+<li>并发容器之ConcurrentHashMap详解(JDK1.8版本)与源码分析</li>
+<li>什么是ConcurrentHashMap？</li>
+<li>Java 中 ConcurrentHashMap 的并发度是什么？</li>
+<li>什么是并发容器的实现？</li>
+<li>Java 中的同步集合与并发集合有什么区别？</li>
+<li>SynchronizedMap 和 ConcurrentHashMap 有什么区别？</li>
+<li>并发容器之CopyOnWriteArrayList详解</li>
+<li>CopyOnWriteArrayList 是什么，可以用于什么应用场景？有哪些优缺点？</li>
+<li>并发容器之ThreadLocal详解</li>
+<li>ThreadLocal 是什么？有哪些使用场景？</li>
+<li>什么是线程局部变量？</li>
+<li>ThreadLocal内存泄漏分析与解决方案</li>
+<li>ThreadLocal造成内存泄漏的原因？</li>
+<li>ThreadLocal内存泄漏解决方案？</li>
+<li>并发容器之BlockingQueue详解</li>
+<li>什么是阻塞队列？阻塞队列的实现原理是什么？如何使用阻塞队列来实现生产者-消费者模型？</li>
+<li>并发容器之ConcurrentLinkedQueue详解与源码分析</li>
+<li>并发容器之ArrayBlockingQueue与LinkedBlockingQueue详解</li>
+<li>Executors类创建四种常见线程池</li>
+<li>什么是线程池？有哪几种创建方式？</li>
+<li>线程池有什么优点？</li>
+<li>线程池都有哪些状态？</li>
+<li>什么是 Executor 框架？为什么使用 Executor 框架？</li>
+<li>在 Java 中 Executor 和 Executors 的区别？</li>
+<li>线程池中 submit() 和 execute() 方法有什么区别？</li>
+<li>什么是线程组，为什么在 Java 中不推荐使用？</li>
+<li>线程池之ThreadPoolExecutor详解</li>
+<li>Executors和ThreaPoolExecutor创建线程池的区别</li>
+<li>你知道怎么创建线程池吗？</li>
+<li>ThreadPoolExecutor构造函数重要参数分析</li>
+<li>ThreadPoolExecutor饱和策略</li>
+<li>一个简单的线程池Demo:<code>Runnable</code>+<code>ThreadPoolExecutor</code></li>
+<li>线程池之ScheduledThreadPoolExecutor详解</li>
+<li>FutureTask详解</li>
+<li>原子操作类</li>
+<li>什么是原子操作？在 Java Concurrency API 中有哪些原子类(atomic classes)？</li>
+<li>说一下 atomic 的原理？</li>
+<li>并发工具之CountDownLatch与CyclicBarrier</li>
+<li>在 Java 中 CycliBarriar 和 CountdownLatch 有什么区别？</li>
+<li>并发工具之Semaphore与Exchanger</li>
+<li>Semaphore 有什么作用</li>
+<li>什么是线程间交换数据的工具Exchanger</li>
+<li>常用的并发工具类有哪些？</li>
+<li>并发实践</li>
+</ol>
+<h1 id="python"><a href="#python" class="headerlink" title="python"></a>python</h1><p><a target="_blank" rel="noopener" href="https://github.com/taizilongxu/interview_python">https://github.com/taizilongxu/interview_python</a><br><a target="_blank" rel="noopener" href="https://github.com/kenwoodjw/python_interview_question">https://github.com/kenwoodjw/python_interview_question</a></p>
+<ol>
+<li><a target="_blank" rel="noopener" href="https://stackoverflow.com/questions/986006/how-do-i-pass-a-variable-by-reference">python中的函数参数传递方式</a></li>
+</ol>
+<h1 id="fastapi"><a href="#fastapi" class="headerlink" title="fastapi"></a>fastapi</h1><h1 id="JDBC"><a href="#JDBC" class="headerlink" title="JDBC"></a>JDBC</h1><ol>
+<li>数据源技术有哪些</li>
+<li><a target="_blank" rel="noopener" href="https://www.cnblogs.com/lizm166/p/9804649.html">Dbcp,c3p0区别</a></li>
+<li>JDBC操作数据库的步骤 </li>
+<li>JDBC中的Statement 和PreparedStatement，CallableStatement</li>
+<li>说说数据库连接池工作原理和实现方案</li>
+<li>Java中如何进行事务的处理</li>
+<li>JDBC是如何实现Java程序和JDBC驱动的松耦合的？</li>
+<li>execute，executeQuery，executeUpdate的区别是什么</li>
+<li>PreparedStatement的缺点是什么</li>
+<li>PreparedStatement的缓存的好处</li>
+<li>JDBC的DriverManager是用来做什么的</li>
+<li>JDBC的ResultSet是什么</li>
+<li>有哪些不同的ResultSet</li>
+<li>JDBC的DataSource是什么，有什么好</li>
+<li>什么是Apache Tomcat的JNDI</li>
+<li>如何通过JDBC的DataSource和Apache Tomcat的JNDI来创建连接池？</li>
+<li>Apache的DBCP是什么？</li>
+<li>java.util.Date和java.sql.Date</li>
+<li>JDBC的RowSet是什么，有哪些不同的RowSet</li>
+</ol>
+<h1 id="IO"><a href="#IO" class="headerlink" title="IO"></a>IO</h1><ol>
+<li>BIO，NIO，NIO2(AIO)区别</li>
+<li>JAVA NIO的实现原理</li>
+<li>JAVA NIO中的Channel和Buffer</li>
+<li>JAVA NIO中的Selector</li>
+<li>AIO的原理</li>
+<li>IO里面的常见类，字节流、字符流、接口、实现类、方法阻塞</li>
+<li>谈谈对NIO的认知</li>
+<li>字节流和字符流的区别</li>
+<li>NIO和传统的IO有什么区别</li>
+<li>BIO和NIO和AIO的区别以及应用场景</li>
+<li>什么是Java序列化，如何实现Java序列化</li>
+<li>PrintStream、BufferedWriter、PrintWriter的比较</li>
+<li>什么是节点流，什么是处理流，各有什么好处，处理流的创建有什么特征</li>
+<li>什么是IO流</li>
+<li>有哪些可用的Filter流</li>
+<li>Java中有几种类型的流</li>
+<li>如何实现对象克隆</li>
+<li>什么是缓冲区？有什么作用？</li>
+<li>什么是阻塞IO？什么是非阻塞IO？</li>
+<li>常见的IO类有哪些</li>
+</ol>
+<h1 id="Spring"><a href="#Spring" class="headerlink" title="Spring"></a>Spring</h1><ol>
+<li>什么是Spring</li>
+<li>Spring MVC流程</li>
+<li>Spring的依赖注入是否有循环问题，如何解决</li>
+<li>Bean的生命周期</li>
+<li>Aware接口的使用场景</li>
+<li>BeanPostProcessor的使用场景</li>
+<li>InitializingBean 作用</li>
+<li>DisposableBean 作用</li>
+<li>Bean的作用域</li>
+<li>什么是IOC</li>
+<li>什么是DI</li>
+<li>Bean注入的方式</li>
+<li>Spring AOP 实现原理</li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/ThinkWon/article/details/104397516">什么是spring?</a></li>
+<li>Spring框架的设计目标，设计理念，和核心是什么</li>
+<li>Spring的优缺点是什么？</li>
+<li>Spring有哪些应用场景</li>
+<li>Spring由哪些模块组成？</li>
+<li>Spring 框架中都用到了哪些设计模式？</li>
+<li>详细讲解一下核心容器（spring context应用上下文) 模块</li>
+<li>Spring框架中有哪些不同类型的事件</li>
+<li>Spring 应用程序有哪些不同组件？</li>
+<li>使用 Spring 有哪些方式？</li>
+<li>什么是Spring IOC 容器？</li>
+<li>控制反转(IoC)有什么作用</li>
+<li>IOC的优点是什么？</li>
+<li>Spring IoC 的实现机制</li>
+<li>Spring 的 IoC支持哪些功能</li>
+<li>BeanFactory 和 ApplicationContext有什么区别？</li>
+<li>Spring 如何设计容器的，BeanFactory和ApplicationContext的关系详解</li>
+<li>ApplicationContext通常的实现是什么？</li>
+<li>什么是Spring的依赖注入？</li>
+<li>依赖注入的基本原则</li>
+<li>依赖注入有什么优势</li>
+<li>有哪些不同类型的依赖注入实现方式？</li>
+<li>构造器依赖注入和 Setter方法注入的区别</li>
+<li>什么是Spring beans？</li>
+<li>一个 Spring Bean 定义 包含什么？</li>
+<li>如何给Spring 容器提供配置元数据？Spring有几种配置方式</li>
+<li>Spring配置文件包含了哪些信息</li>
+<li>Spring基于xml注入bean的几种方式</li>
+<li>你怎样定义类的作用域？</li>
+<li>解释Spring支持的几种bean的作用域</li>
+<li>Spring框架中的单例bean是线程安全的吗？</li>
+<li>Spring如何处理线程并发问题？</li>
+<li>解释Spring框架中bean的生命周期</li>
+<li>哪些是重要的bean生命周期方法？ 你能重载它们吗？</li>
+<li>什么是Spring的内部bean？什么是Spring inner beans？</li>
+<li>在 Spring中如何注入一个java集合？</li>
+<li>什么是bean装配？</li>
+<li>什么是bean的自动装配？</li>
+<li>解释不同方式的自动装配，spring 自动装配 bean 有哪些方式？</li>
+<li>使用@Autowired注解自动装配的过程是怎样的？</li>
+<li>自动装配有哪些局限性？</li>
+<li>你可以在Spring中注入一个null 和一个空字符串吗？</li>
+<li>Spring注解（8）</li>
+<li>什么是基于Java的Spring注解配置? 给一些注解的例子</li>
+<li>怎样开启注解装配？</li>
+<li>@Component, @Controller, @Repository, @Service 有何区别？</li>
+<li>@Required 注解有什么作用</li>
+<li>@Autowired 注解有什么作用</li>
+<li>@Autowired和@Resource之间的区别</li>
+<li>@Qualifier 注解有什么作用</li>
+<li>@RequestMapping 注解有什么用？</li>
+<li>Spring数据访问（14）</li>
+<li>解释对象/关系映射集成模块</li>
+<li>在Spring框架中如何更有效地使用JDBC？</li>
+<li>解释JDBC抽象和DAO模块</li>
+<li>spring DAO 有什么用？</li>
+<li>spring JDBC API 中存在哪些类？</li>
+<li>JdbcTemplate是什么</li>
+<li>使用Spring通过什么方式访问Hibernate？使用 Spring 访问 Hibernate 的方法有哪些？</li>
+<li>如何通过HibernateDaoSupport将Spring和Hibernate结合起来？</li>
+<li>Spring支持的事务管理类型， spring 事务实现方式有哪些？</li>
+<li>Spring事务的实现方式和实现原理</li>
+<li>说一下Spring的事务传播行为</li>
+<li>说一下 spring 的事务隔离？</li>
+<li>Spring框架的事务管理有哪些优点？</li>
+<li>你更倾向用那种事务管理类型？</li>
+<li>什么是AOP</li>
+<li>Spring AOP and AspectJ AOP 有什么区别？AOP 有哪些实现方式？</li>
+<li>JDK动态代理和CGLIB动态代理的区别</li>
+<li>如何理解 Spring 中的代理？</li>
+<li>解释一下Spring AOP里面的几个名词</li>
+<li>Spring在运行时通知对象</li>
+<li>Spring只支持方法级别的连接点</li>
+<li>在Spring AOP 中，关注点和横切关注的区别是什么？在 spring aop 中 concern 和 cross-cutting concern 的不同之处</li>
+<li>Spring通知有哪些类型？</li>
+<li>什么是切面 Aspect？</li>
+<li>解释基于XML Schema方式的切面实现</li>
+<li>解释基于注解的切面实现</li>
+<li>有几种不同类型的自动代理？</li>
+<li>概述</li>
+</ol>
+<h1 id="Spring-MVC"><a href="#Spring-MVC" class="headerlink" title="Spring MVC"></a>Spring MVC</h1><ol>
+<li>什么是Spring MVC？简单介绍下你对Spring MVC的理解？</li>
+<li>Spring MVC的优点</li>
+<li>Spring MVC的主要组件？</li>
+<li>什么是DispatcherServlet</li>
+<li>什么是Spring MVC框架的控制器？</li>
+<li>Spring MVC的控制器是不是单例模式,如果是,有什么问题,怎么解决？</li>
+<li>请描述Spring MVC的工作流程？描述一下 DispatcherServlet 的工作流程？</li>
+<li>MVC是什么？MVC设计模式的好处有哪些</li>
+<li>常用注解</li>
+<li>注解原理是什么</li>
+<li>Spring MVC常用的注解有哪些？</li>
+<li>SpingMvc中的控制器的注解一般用哪个,有没有别的注解可以替代？</li>
+<li>@Controller注解的作用</li>
+<li>@RequestMapping注解的作用</li>
+<li>@ResponseBody注解的作用</li>
+<li>@PathVariable和@RequestParam的区别</li>
+<li>Spring MVC与Struts2区别</li>
+<li>Spring MVC怎么样设定重定向和转发的？</li>
+<li>Spring MVC怎么和AJAX相互调用的？</li>
+<li>如何解决POST请求中文乱码问题，GET的又如何处理呢？</li>
+<li>Spring MVC的异常处理？</li>
+<li>如果在拦截请求中，我想拦截get方式提交的方法,怎么配置</li>
+<li>怎样在方法里面得到Request,或者Session？</li>
+<li>如果想在拦截的方法里面得到从前台传入的参数,怎么得到？</li>
+<li>如果前台有很多个参数传入,并且这些参数都是一个对象的,那么怎么样快速得到这个对象？</li>
+<li>Spring MVC中函数的返回值是什么？</li>
+<li>Spring MVC用什么对象从后台向前台传递数据的？</li>
+<li>怎么样把ModelMap里面的数据放入Session里面？</li>
+<li>Spring MVC里面拦截器是怎么写的</li>
+<li>介绍一下 WebApplicationContext</li>
+</ol>
+<h1 id="Mysql"><a href="#Mysql" class="headerlink" title="Mysql"></a>Mysql</h1><ol>
+<li>引擎对比</li>
+<li>数据库性能优化</li>
+<li>分库分表</li>
+<li>SQL优化(最左前缀匹配原则)</li>
+<li>Online-ddl</li>
+<li>高可用Mysql</li>
+<li>事务的隔离级别</li>
+<li>ACID的实现</li>
+<li>RR的实现</li>
+<li>RC和RR的使用场景</li>
+<li>意向锁的原理</li>
+<li>间隙锁</li>
+<li>读写锁</li>
+<li>什么时候会使用到表锁</li>
+<li>如何加读写锁</li>
+<li>常见的SQL语句</li>
+<li>索引的原理</li>
+<li>为什么要使用自增Id</li>
+<li>聚集索引&amp;非聚集索引</li>
+<li>为什么使用B+树而不是用B树</li>
+<li>如何建索引</li>
+<li>什么是数据库预读</li>
+<li>什么是倒排索引</li>
+<li>分区分库分表</li>
+<li>如何解决深翻页问题</li>
+<li>什么是sql预编译</li>
+<li>数据库基础知识</li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/ThinkWon/article/details/104778621">为什么要使用数据库</a></li>
+<li>什么是SQL？</li>
+<li>什么是MySQL?</li>
+<li>数据库三大范式是什么</li>
+<li>mysql有关权限的表都有哪几个</li>
+<li>MySQL的binlog有有几种录入格式？分别有什么区别？</li>
+<li>数据类型</li>
+<li>mysql有哪些数据类型</li>
+<li>MySQL存储引擎MyISAM与InnoDB区别</li>
+<li>MyISAM索引与InnoDB索引的区别？</li>
+<li>InnoDB引擎的4大特性</li>
+<li>存储引擎选择</li>
+<li>索引</li>
+<li>什么是索引？</li>
+<li>索引有哪些优缺点？</li>
+<li>索引使用场景（重点）</li>
+<li>索引有哪几种类型？</li>
+<li>索引的数据结构（b树，hash）</li>
+<li>索引的基本原理</li>
+<li>索引算法有哪些？</li>
+<li>索引设计的原则？</li>
+<li>创建索引的原则（重中之重）</li>
+<li>创建索引的三种方式，删除索引</li>
+<li>创建索引时需要注意什么？</li>
+<li>使用索引查询一定能提高查询的性能吗？为什么</li>
+<li>百万级别或以上的数据如何删除</li>
+<li>前缀索引</li>
+<li>什么是最左前缀原则？什么是最左匹配原则</li>
+<li>B树和B+树的区别</li>
+<li>使用B树的好处</li>
+<li>使用B+树的好处</li>
+<li>Hash索引和B+树所有有什么区别或者说优劣呢?</li>
+<li>数据库为什么使用B+树而不是B树</li>
+<li>B+树在满足聚簇索引和覆盖索引的时候不需要回表查询数据</li>
+<li>什么是聚簇索引？何时使用聚簇索引与非聚簇索引</li>
+<li>非聚簇索引一定会回表查询吗？</li>
+<li>联合索引是什么？为什么需要注意联合索引中的顺序？</li>
+<li>什么是数据库事务？</li>
+<li>事物的四大特性(ACID)介绍一下?</li>
+<li>什么是脏读？幻读？不可重复读？</li>
+<li>什么是事务的隔离级别？MySQL的默认隔离级别是什么？</li>
+<li>对MySQL的锁了解吗</li>
+<li>隔离级别与锁的关系</li>
+<li>按照锁的粒度分数据库锁有哪些？锁机制与InnoDB锁算法</li>
+<li>从锁的类别上分MySQL都有哪些锁呢？像上面那样子进行锁定岂不是有点阻碍并发效率了</li>
+<li>MySQL中InnoDB引擎的行锁是怎么实现的？</li>
+<li>InnoDB存储引擎的锁的算法有三种</li>
+<li>什么是死锁？怎么解决？</li>
+<li>数据库的乐观锁和悲观锁是什么？怎么实现的？</li>
+<li>为什么要使用视图？什么是视图？</li>
+<li>视图有哪些特点？</li>
+<li>视图的使用场景有哪些？</li>
+<li>视图的优点</li>
+<li>视图的缺点</li>
+<li>什么是游标</li>
+<li>存储过程与函数</li>
+<li>什么是存储过程？有哪些优缺点？</li>
+<li>什么是触发器？触发器的使用场景有哪些？</li>
+<li>MySQL中都有哪些触发器？</li>
+<li>常用SQL语句</li>
+<li>SQL语句主要分为哪几类</li>
+<li>超键、候选键、主键、外键分别是什么？</li>
+<li>SQL 约束有哪几种？</li>
+<li>六种关联查询</li>
+<li>什么是子查询</li>
+<li>子查询的三种情况</li>
+<li>mysql中 in 和 exists 区别</li>
+<li>varchar与char的区别</li>
+<li>varchar(50)中50的涵义</li>
+<li>int(20)中20的涵义</li>
+<li>mysql为什么这么设计</li>
+<li>mysql中int(10)和char(10)以及varchar(10)的区别</li>
+<li>FLOAT和DOUBLE的区别是什么？</li>
+<li>drop、delete与truncate的区别</li>
+<li>UNION与UNION ALL的区别？</li>
+<li>如何定位及优化SQL语句的性能问题？创建的索引有没有被使用到?或者说怎么才可以知道这条语句运行很慢的原因？</li>
+<li>SQL的生命周期？</li>
+<li>大表数据查询，怎么优化</li>
+<li>超大分页怎么处理？</li>
+<li>mysql 分页</li>
+<li>慢查询日志</li>
+<li>关心过业务系统里面的sql耗时吗？统计过慢查询吗？对慢查询都怎么优化过？</li>
+<li>为什么要尽量设定一个主键？</li>
+<li>主键使用自增ID还是UUID？</li>
+<li>字段为什么要求定义为not null？</li>
+<li>如果要存储用户的密码散列，应该使用什么字段进行存储？</li>
+<li>优化查询过程中的数据访问</li>
+<li>优化长难的查询语句</li>
+<li>优化特定类型的查询语句</li>
+<li>优化关联查询</li>
+<li>优化子查询</li>
+<li>优化LIMIT分页</li>
+<li>优化UNION查询</li>
+<li>优化WHERE子句</li>
+<li>数据库优化</li>
+<li>为什么要优化</li>
+<li>数据库结构优化</li>
+<li>MySQL数据库cpu飙升到500%的话他怎么处理？</li>
+<li>大表怎么优化？</li>
+<li>某个表有近千万数据，CRUD比较慢，如何优化？</li>
+<li>分库分表了是怎么做的？</li>
+<li>分表分库了有什么问题？</li>
+<li>有用到中间件么？</li>
+<li>他们的原理知道么？</li>
+<li>垂直分表适用场景、缺点</li>
+<li>水平分表适用场景、水平切分的缺点</li>
+<li>MySQL的复制原理以及流程</li>
+<li>读写分离有哪些解决方案？</li>
+<li>备份计划，mysqldump以及xtranbackup的实现原理</li>
+<li>数据表损坏的修复方式有哪些？</li>
+</ol>
+<h1 id="MyBatis"><a href="#MyBatis" class="headerlink" title="MyBatis"></a>MyBatis</h1><ol>
+<li>MyBatis是什么？</li>
+<li>ORM是什么</li>
+<li>为什么说Mybatis是半自动ORM映射工具？它与全自动的区别在哪里？</li>
+<li>传统JDBC开发存在的问题</li>
+<li>JDBC编程有哪些不足之处，MyBatis是如何解决这些问题的？</li>
+<li>Mybatis优缺点</li>
+<li>MyBatis框架适用场景</li>
+<li>Hibernate 和 MyBatis 的区别</li>
+<li>MyBatis的解析和运行原理</li>
+<li>MyBatis编程步骤是什么样的？</li>
+<li>请说说MyBatis的工作原理</li>
+<li>MyBatis的功能架构是怎样的</li>
+<li>MyBatis的框架架构设计是怎么样的</li>
+<li>为什么需要预编译</li>
+<li>Mybatis都有哪些Executor执行器？它们之间的区别是什么？</li>
+<li>Mybatis中如何指定使用哪一种Executor执行器？</li>
+<li>Mybatis是否支持延迟加载？如果支持，它的实现原理是什么？</li>
+<li>#{}和${}的区别</li>
+<li>模糊查询like语句该怎么写</li>
+<li>在mapper中如何传递多个参数</li>
+<li>Mybatis如何执行批量操作</li>
+<li>如何获取生成的主键</li>
+<li>当实体类中的属性名和表中的字段名不一样 ，怎么办</li>
+<li>Mapper 编写有哪几种方式？</li>
+<li>什么是MyBatis的接口绑定？有哪些实现方式？</li>
+<li>使用MyBatis的mapper接口调用时有哪些要求？</li>
+<li>最佳实践中，通常一个Xml映射文件，都会写一个Dao接口与之对应，请问，这个Dao接口的工作原理是什么？Dao接口里的方法，参数不同时，方法能重载吗</li>
+<li>Mybatis的Xml映射文件中，不同的Xml映射文件，id是否可以重复？</li>
+<li>简述Mybatis的Xml映射文件和Mybatis内部数据结构之间的映射关系？</li>
+<li>Mybatis是如何将sql执行结果封装为目标对象并返回的？都有哪些映射形式？</li>
+<li>Xml映射文件中，除了常见的select|insert|updae|delete标签之外，还有哪些标签？</li>
+<li>Mybatis映射文件中，如果A标签通过include引用了B标签的内容，请问，B标签能否定义在A标签的后面，还是说必须定义在A标签的前面？</li>
+<li>MyBatis实现一对一，一对多有几种方式，怎么操作的？</li>
+<li>Mybatis是否可以映射Enum枚举类？</li>
+<li>Mybatis动态sql是做什么的？都有哪些动态sql？能简述一下动态sql的执行原理不？</li>
+<li>Mybatis是如何进行分页的？分页插件的原理是什么？</li>
+<li>简述Mybatis的插件运行原理，以及如何编写一个插件。</li>
+<li>Mybatis的一级、二级缓存</li>
+</ol>
+<h1 id="Redis"><a href="#Redis" class="headerlink" title="Redis"></a>Redis</h1><ol>
+<li>Redis的数据类型</li>
+<li>Redis 字符串的底层实现 </li>
+<li>Redis 列表的底层实现 </li>
+<li>Redis 哈希表的底层实现 </li>
+<li>Redis 集合的底层实现 </li>
+<li>Redis 有序集的底层实现 </li>
+<li>Redis 哨兵的实现</li>
+<li>Redis 集群的实现</li>
+<li>延迟加载和直写原理以及如何选择</li>
+<li>缓存问题 缓存击穿 缓存穿透 缓存雪崩  </li>
+<li>AOF原理</li>
+<li>RDB原理</li>
+<li>什么是Redis</li>
+<li>Redis有哪些优缺点</li>
+<li>为什么要用 Redis /为什么要用缓存</li>
+<li>为什么要用 Redis 而不用 map/guava 做缓存?</li>
+<li>Redis为什么这么快</li>
+<li>数据类型</li>
+<li>Redis有哪些数据类型</li>
+<li>Redis的应用场景</li>
+<li>什么是Redis持久化？</li>
+<li>Redis 的持久化机制是什么？各自的优缺点？</li>
+<li>如何选择合适的持久化方式</li>
+<li>Redis持久化数据和缓存怎么做扩容？</li>
+<li>过期键的删除策略</li>
+<li>Redis的过期键的删除策略</li>
+<li>Redis key的过期时间和永久有效分别怎么设置？</li>
+<li>我们知道通过expire来设置key 的过期时间，那么对过期的数据怎么处理呢?</li>
+<li>MySQL里有2000w数据，redis中只存20w的数据，如何保证redis中的数据都是热点数据</li>
+<li>Redis的内存淘汰策略有哪些</li>
+<li>Redis主要消耗什么物理资源？</li>
+<li>Redis的内存用完了会发生什么？</li>
+<li>Redis如何做内存优化？</li>
+<li>Redis线程模型</li>
+<li>什么是事务？</li>
+<li>Redis事务的概念</li>
+<li>Redis事务的三个阶段</li>
+<li>Redis事务相关命令</li>
+<li>事务管理（ACID）概述</li>
+<li>Redis事务支持隔离性吗</li>
+<li>Redis事务保证原子性吗，支持回滚吗</li>
+<li>Redis事务其他实现</li>
+<li>集群方案</li>
+<li>哨兵模式</li>
+<li>官方Redis Cluster 方案(服务端路由查询)</li>
+<li>基于客户端分配</li>
+<li>基于代理服务器分片</li>
+<li>Redis 主从架构</li>
+<li>Redis集群的主从复制模型是怎样的？</li>
+<li>生产环境中的 redis 是怎么部署的？</li>
+<li>说说Redis哈希槽的概念？</li>
+<li>Redis集群会有写操作丢失吗？为什么？</li>
+<li>Redis集群之间是如何复制的？</li>
+<li>Redis集群最大节点个数是多少？</li>
+<li>Redis集群如何选择数据库？</li>
+<li>Redis是单线程的，如何提高多核CPU的利用率？</li>
+<li>为什么要做Redis分区？</li>
+<li>你知道有哪些Redis分区实现方案？</li>
+<li>Redis分区有什么缺点？</li>
+<li>分布式问题</li>
+<li>Redis实现分布式锁</li>
+<li>如何解决 Redis 的并发竞争 Key 问题</li>
+<li>分布式Redis是前期做还是后期规模上来了再做好？为什么？</li>
+<li>什么是 RedLock</li>
+<li>缓存异常</li>
+<li>缓存雪崩</li>
+<li>缓存穿透</li>
+<li>缓存击穿</li>
+<li>缓存预热</li>
+<li>缓存降级</li>
+<li>热点数据和冷数据</li>
+<li>缓存热点key</li>
+<li>Redis支持的Java客户端都有哪些？官方推荐用哪个？</li>
+<li>Redis和Redisson有什么关系？</li>
+<li>Jedis与Redisson对比有什么优缺点？</li>
+<li>Redis与Memcached的区别</li>
+<li>如何保证缓存与数据库双写时的数据一致性？</li>
+<li>Redis常见性能问题和解决方案？</li>
+<li>Redis官方为什么不提供Windows版本？</li>
+<li>一个字符串类型的值能存储最大容量是多少？</li>
+<li>Redis如何做大量数据插入？</li>
+<li>假如Redis里面有1亿个key，其中有10w个key是以某个固定的已知的前缀开头的，如果将它们全部找出来？</li>
+<li>使用Redis做过异步队列吗，是如何实现的</li>
+<li>Redis如何实现延时队列</li>
+<li>Redis回收进程如何工作的？</li>
+<li>Redis回收使用的是什么算法？</li>
+</ol>
+<h1 id="Kafka"><a href="#Kafka" class="headerlink" title="Kafka"></a>Kafka</h1><ol>
+<li>什么是 kafka?</li>
+<li>kafka 的 3 个关键功能？</li>
+<li>kafka 通常用于两大类应用？</li>
+<li>kafka 特性?</li>
+<li>kafka 的 5 个核心 Api?</li>
+<li>什么是 Broker（代理）?</li>
+<li>什么是 Producer（生产者）?</li>
+<li>什么是 Consumer（消费者）?</li>
+<li>什么是 Topic（主题）?</li>
+<li>什么是 Partition（分区）?</li>
+<li>分区和代理节点的关系？</li>
+<li>什么是副本(Replication)?</li>
+<li>什么是记录(Record)?</li>
+<li>kafka 适合哪些场景？</li>
+<li>kafka 磁盘选用上？</li>
+<li>使用 RAID 的优势?</li>
+<li>磁盘容量规划需要考虑到几个因素？</li>
+<li>Broker 使用单个？多个文件目录路径参数？</li>
+<li>一般来说选择哪个参数配置路径？好处？</li>
+<li>自动创建主题的相关参数是?</li>
+<li>解决 kafka 消息丢失问题？</li>
+<li>如何自定分区策略？</li>
+<li>kafka 压缩消息可能发生的地方？</li>
+<li>kafka 消息重复问题？</li>
+<li>你知道的 kafka 监控工具？</li>
+<li>kafka 系统支持两种不同发送方式?</li>
+<li>消费者和消费者组区别？</li>
+<li></li>
+</ol>
+<h1 id="项目"><a href="#项目" class="headerlink" title="项目"></a>项目</h1><h1 id="Dubbo"><a href="#Dubbo" class="headerlink" title="Dubbo"></a>Dubbo</h1><h1 id="操作系统"><a href="#操作系统" class="headerlink" title="操作系统"></a>操作系统</h1><ol>
+<li>线程和进程区别</li>
+<li>硬链接与软链接的区别</li>
+<li>查看某个进程中的线程</li>
+<li>查看某个文件夹中每个文件夹的大小</li>
+<li>CPU负载的含义</li>
+<li>键盘与硬件中断</li>
+<li>页面置换算法</li>
+<li>PCB包含什么</li>
+<li>进程调度算法</li>
+<li></li>
+</ol>
+<h1 id="计算机网络"><a href="#计算机网络" class="headerlink" title="计算机网络"></a>计算机网络</h1><ol>
+<li><a target="_blank" rel="noopener" href="https://www.wangtianyi.top/blog/2017/10/22/cong-urlkai-shi-,ding-wei-shi-jie/?utm_source=github&utm_medium=github">输入URL并按下回车键发生了什么</a></li>
+<li>TCP/IP</li>
+<li>TCP协议内容</li>
+<li>UDP协议内容</li>
+<li>TCP UDP的选择</li>
+<li>CDN</li>
+<li>三次握手</li>
+<li>为什么是三次不是两次</li>
+<li> 四次挥手</li>
+<li>为什么要time-wait</li>
+<li>HTTP</li>
+<li>HTTPS</li>
+<li>CA证书原理</li>
+<li>中间人攻击</li>
+<li>滑动窗口协议</li>
+<li>拥塞避免算法</li>
+<li>Post报文和get报文的长度限制</li>
+<li>你所知道网络协议有那些？</li>
+<li>粘包问题的解决</li>
+</ol>
+<h1 id="Zookeeper"><a href="#Zookeeper" class="headerlink" title="Zookeeper"></a>Zookeeper</h1><h1 id="Netty"><a href="#Netty" class="headerlink" title="Netty"></a>Netty</h1><h1 id="Dubbo-1"><a href="#Dubbo-1" class="headerlink" title="Dubbo"></a>Dubbo</h1><h1 id="Tomcat"><a href="#Tomcat" class="headerlink" title="Tomcat"></a>Tomcat</h1><ol>
+<li>Tomcat 的缺省端口是多少，怎么修改？</li>
+<li>tomcat 有哪几种 Connector 运行模式(优化)</li>
+<li>tomcat 容器是如何创建 servlet 类实例？用到了什么原理</li>
+<li>tomcat 如何优化</li>
+<li>tomcat 有哪些配置</li>
+<li>tomcat 的架构</li>
+</ol>
+<h1 id="Maven"><a href="#Maven" class="headerlink" title="Maven"></a>Maven</h1><h1 id="Nginx"><a href="#Nginx" class="headerlink" title="Nginx"></a>Nginx</h1><h1 id="git"><a href="#git" class="headerlink" title="git"></a>git</h1><h1 id="算法"><a href="#算法" class="headerlink" title="算法"></a>算法</h1><ol>
+<li>排序算法</li>
+<li></li>
+</ol>
+<h1 id="设计模式以及使用场景"><a href="#设计模式以及使用场景" class="headerlink" title="设计模式以及使用场景"></a>设计模式以及使用场景</h1><ol>
+<li>设计模式的六大原则</li>
+<li>单例模式</li>
+<li>装饰器模式</li>
+<li>策略模式</li>
+<li>观察者模式</li>
+<li>中介者模式</li>
+<li>代理模式</li>
+<li>工厂模式</li>
+<li>享元模式</li>
+<li>模版方法</li>
+<li>责任链</li>
+<li>建造者模式</li>
+<li>适配器模式</li>
+<li>组合模式</li>
+<li>访问者模式</li>
+</ol>
+<h1 id="分布式"><a href="#分布式" class="headerlink" title="分布式"></a>分布式</h1><ol>
+<li>分布式锁实现方式</li>
+<li>缓存策略</li>
+<li>CAP理论</li>
+<li>分布式事务</li>
+<li>两阶段提交方案/XA方案</li>
+<li>TCC 方案</li>
+<li>本地消息表</li>
+<li>可靠消息最终一致性方案</li>
+<li>最大努力通知方案</li>
+<li>一致模式<ul>
+<li>弱一致性</li>
+<li>最终一致性</li>
+<li>强一致性</li>
+</ul>
+</li>
+</ol>
+<h1 id="常见解决方案"><a href="#常见解决方案" class="headerlink" title="常见解决方案"></a>常见解决方案</h1><ol>
+<li>分布式全局唯一Id</li>
+<li>Oauth2.0</li>
+<li>单点登录</li>
+<li>异地多活</li>
+<li>一致 Hash 算法</li>
+<li>7层负载均衡Nginx</li>
+<li>4层负载均衡LVS</li>
+<li><a target="_blank" rel="noopener" href="https://github.com/xbox1994/Java-Interview/blob/master/MD/%E7%B3%BB%E7%BB%9F%E8%AE%BE%E8%AE%A1-%E9%AB%98%E5%B9%B6%E5%8F%91%E6%8A%A2%E7%BA%A2%E5%8C%85.md">高并发抢红包</a></li>
+<li></li>
+</ol>
+<h1 id="缓存"><a href="#缓存" class="headerlink" title="缓存"></a>缓存</h1><ol>
+<li>客户端缓存</li>
+<li>CDN 缓存</li>
+<li>Web 服务器缓存</li>
+<li>数据库缓存</li>
+<li>应用缓存</li>
+<li>数据库查询级别的缓存</li>
+<li>对象级别的缓存</li>
+<li>何时更新缓存<ul>
+<li>缓存模式</li>
+<li>直写模式</li>
+<li>回写模式</li>
+<li>刷新</li>
+</ul>
+</li>
+</ol>
+<h1 id="异步"><a href="#异步" class="headerlink" title="异步"></a>异步</h1><p>消息队列<br>任务队列<br>背压机制</p>
+<h1 id="通讯"><a href="#通讯" class="headerlink" title="通讯"></a>通讯</h1><p>传输控制协议（TCP）<br>用户数据报协议（UDP）<br>远程控制调用协议（RPC）<br>表述性状态转移（REST）</p>
+<h1 id="概念"><a href="#概念" class="headerlink" title="概念"></a>概念</h1><ol>
+<li>什么是B/S架构？什么是C/S架构</li>
+<li>什么是restful </li>
+</ol>
+<h1 id="代码风格"><a href="#代码风格" class="headerlink" title="代码风格"></a>代码风格</h1><ol>
+<li>什么是restful </li>
+</ol>
+<h1 id="微服务"><a href="#微服务" class="headerlink" title="微服务"></a>微服务</h1><ol>
+<li><a target="_blank" rel="noopener" href="https://www.wangtianyi.top/blog/2017/04/16/microservies-1-introduction-to-microservies/?utm_source=github&utm_medium=github">什么是微服务</a></li>
+<li>服务发现</li>
+<li>微服务的API网关</li>
+<li>服务降级</li>
+<li>服务熔断</li>
+<li>服务配置中心</li>
+</ol>
+<h1 id="问题排查"><a href="#问题排查" class="headerlink" title="问题排查"></a>问题排查</h1><ol>
+<li>查看即时GC状态</li>
+<li>OOM排查流程</li>
+<li>CPU负载过高问题</li>
+</ol>
+<h1 id="CDN"><a href="#CDN" class="headerlink" title="CDN"></a>CDN</h1><ol>
+<li>CDN 推送</li>
+<li>CDN 拉取</li>
+</ol>
+<h1 id="NoSQL"><a href="#NoSQL" class="headerlink" title="NoSQL"></a>NoSQL</h1><p>Key-value 存储<br>文档存储<br>宽列存储<br>图数据库</p>
+<h1 id="ZooKeeper"><a href="#ZooKeeper" class="headerlink" title="ZooKeeper"></a>ZooKeeper</h1><ol>
+<li>ZooKeeper是什么？</li>
+<li>ZooKeeper 提供了什么？</li>
+<li>Zookeeper 文件系统</li>
+<li>Zookeeper 怎么保证主从节点的状态同步？</li>
+<li>四种类型的数据节点 Znode</li>
+<li>Zookeeper Watcher 机制 – 数据变更通知</li>
+<li>客户端注册 Watcher 实现</li>
+<li>服务端处理 Watcher 实现</li>
+<li>客户端回调 Watcher</li>
+<li>ACL 权限控制机制</li>
+<li>Chroot 特性</li>
+<li>会话管理</li>
+<li>服务器角色</li>
+<li>Zookeeper 下 Server 工作状态</li>
+<li>数据同步</li>
+<li>zookeeper 是如何保证事务的顺序一致性的？</li>
+<li>分布式集群中为什么会有 Master主节点？</li>
+<li>zk 节点宕机如何处理？</li>
+<li>zookeeper 负载均衡和 nginx 负载均衡区别</li>
+<li>Zookeeper 有哪几种几种部署模式？</li>
+<li>集群最少要几台机器，集群规则是怎样的？集群中有 3 台服务器，其中一个节点宕机，这个时候 Zookeeper 还可以使用吗？</li>
+<li>集群支持动态添加机器吗？</li>
+<li>Zookeeper 对节点的 watch 监听通知是永久的吗？为什么不是永久的?</li>
+<li>Zookeeper 的 java 客户端都有哪些？</li>
+<li>chubby 是什么，和 zookeeper 比你怎么看？</li>
+<li>说几个 zookeeper 常用的命令。</li>
+<li>ZAB 和 Paxos 算法的联系与区别？</li>
+<li>Zookeeper 的典型应用场景</li>
+<li>Zookeeper 都有哪些功能？</li>
+<li>说一下 Zookeeper 的通知机制？</li>
+<li>Zookeeper 和 Dubbo 的关系？</li>
+</ol>
+<h1 id="HTTP"><a href="#HTTP" class="headerlink" title="HTTP"></a>HTTP</h1><ol>
+<li>状态码</li>
+<li>WEBSOCKET</li>
+<li>HTTP与HTTPS</li>
+<li>HTTP缓存</li>
+<li></li>
+</ol>
+<h1 id="算法-1"><a href="#算法-1" class="headerlink" title="算法"></a>算法</h1><ol>
+<li>数组-快速排序-第k大个数</li>
+<li>数组-对撞指针-最大蓄水</li>
+<li>数组-滑动窗口-最小连续子数组</li>
+<li>数组-归并排序-合并有序数组</li>
+<li>链表-链表反转-链表相加</li>
+<li>链表-双指针-删除倒数第n个</li>
+<li>二叉树-递归-二叉树反转</li>
+<li>动态规划-连续子数组最大和</li>
+<li>数据结构-LRU淘汰算法</li>
+</ol>
+<h1 id="Linux"><a href="#Linux" class="headerlink" title="Linux"></a>Linux</h1><ol>
+<li>什么是Linux</li>
+<li>Unix和Linux有什么区别？</li>
+<li>什么是 Linux 内核？</li>
+<li>Linux的基本组件是什么？</li>
+<li>Linux 的体系结构</li>
+<li>BASH和DOS之间的基本区别是什么？</li>
+<li>Linux 开机启动过程？</li>
+<li>Linux系统缺省的运行级别？</li>
+<li>Linux 使用的进程间通信方式？</li>
+<li>Linux 有哪些系统日志文件？</li>
+<li>Linux系统安装多个桌面环境有帮助吗？</li>
+<li>什么是交换空间？</li>
+<li>什么是root帐户</li>
+<li>什么是LILO？</li>
+<li>什么是BASH？</li>
+<li>什么是CLI？</li>
+<li>什么是GUI？</li>
+<li>开源的优势是什么？</li>
+<li>GNU项目的重要性是什么？</li>
+<li>磁盘、目录、文件</li>
+<li>简单 Linux 文件系统？</li>
+<li>Linux 的目录结构是怎样的？</li>
+<li>什么是 inode ？</li>
+<li>什么是硬链接和软链接？</li>
+<li>RAID 是什么?</li>
+<li>一台 Linux 系统初始化环境后需要做一些什么安全工作？</li>
+<li>什么叫 CC 攻击？什么叫 DDOS 攻击？</li>
+<li>什么是网站数据库注入？</li>
+<li>Shell 脚本是什么？</li>
+<li>可以在 Shell 脚本中使用哪些类型的变量？</li>
+<li>Shell 脚本中 <code>if</code> 语法如何嵌套?</li>
+<li>Shell 脚本中 <code>case</code> 语句的语法?</li>
+<li>Shell 脚本中 <code>for</code> 循环语法？</li>
+<li>Shell 脚本中 <code>while</code> 循环语法？</li>
+<li>如何使脚本可执行?</li>
+<li>在 Shell 脚本如何定义函数呢？</li>
+<li>判断一文件是不是字符设备文件，如果是将其拷贝到 <code>/dev</code> 目录下？</li>
+<li>添加一个新组为 class1 ，然后添加属于这个组的 30 个用户，用户名的形式为 stdxx ，其中 xx 从 01 到 30 ？</li>
+<li>写一个 sed 命令，修改 <code>/tmp/input.txt</code> 文件的内容？</li>
+<li>如何选择 Linux 操作系统版本?</li>
+<li>如何规划一台 Linux 主机，步骤是怎样？</li>
+<li>请问当用户反馈网站访问慢，你会如何处理？</li>
+<li>Linux 性能调优都有哪几种方法？</li>
+<li>文件管理命令</li>
+<li>cat 命令</li>
+<li>chmod 命令</li>
+<li>chown 命令</li>
+<li>cp 命令</li>
+<li>find 命令</li>
+<li>head 命令</li>
+<li>less 命令</li>
+<li>ln 命令</li>
+<li>locate 命令</li>
+<li>more 命令</li>
+<li>mv 命令</li>
+<li>rm 命令</li>
+<li>tail 命令</li>
+<li>touch 命令</li>
+<li>vim 命令</li>
+<li>whereis 命令</li>
+<li>which 命令</li>
+<li>文档编辑命令</li>
+<li>grep 命令</li>
+<li>wc 命令</li>
+<li>磁盘管理命令</li>
+<li>cd 命令</li>
+<li>df 命令</li>
+<li>du 命令</li>
+<li>ls命令</li>
+<li>mkdir 命令</li>
+<li>pwd 命令</li>
+<li>rmdir 命令</li>
+<li>网络通讯命令</li>
+<li>ifconfig 命令</li>
+<li>iptables 命令</li>
+<li>netstat 命令</li>
+<li>ping 命令</li>
+<li>telnet 命令</li>
+<li>系统管理命令</li>
+<li>date 命令</li>
+<li>free 命令</li>
+<li>kill 命令</li>
+<li>ps 命令</li>
+<li>rpm 命令</li>
+<li>top 命令</li>
+<li>yum 命令</li>
+<li>备份压缩命令</li>
+<li>bzip2 命令</li>
+<li>gzip 命令</li>
+<li>tar 命令</li>
+<li>unzip 命令</li>
+</ol>
+<h1 id="Spring-boot"><a href="#Spring-boot" class="headerlink" title="Spring boot"></a>Spring boot</h1><ol>
+<li>什么是 Spring Boot？</li>
+<li>Spring Boot 有哪些优点？</li>
+<li>Spring Boot 的核心注解是哪个？它主要由哪几个注解组成的？</li>
+<li>什么是 JavaConfig？</li>
+<li>Spring Boot 自动配置原理是什么？</li>
+<li>你如何理解 Spring Boot 配置加载顺序？</li>
+<li>什么是 YAML？</li>
+<li>YAML 配置的优势在哪里 ?</li>
+<li>Spring Boot 是否可以使用 XML 配置 ?</li>
+<li>spring boot 核心配置文件是什么？bootstrap.properties 和 application.properties 有何区别 ?</li>
+<li>什么是 Spring Profiles？</li>
+<li>如何在自定义端口上运行 Spring Boot 应用程序？</li>
+<li>如何实现 Spring Boot 应用程序的安全性？</li>
+<li>比较一下 Spring Security 和 Shiro 各自的优缺点 ?</li>
+<li>Spring Boot 中如何解决跨域问题 ?</li>
+<li>什么是 CSRF 攻击？</li>
+<li>Spring Boot 中的监视器是什么？</li>
+<li>如何在 Spring Boot 中禁用 Actuator 端点安全性？</li>
+<li>我们如何监视所有 Spring Boot 微服务？</li>
+<li>整合第三方项目</li>
+<li>什么是 WebSockets？</li>
+<li>什么是 Spring Data ?</li>
+<li>什么是 Spring Batch？</li>
+<li>什么是 FreeMarker 模板？</li>
+<li>如何集成 Spring Boot 和 ActiveMQ？</li>
+<li>什么是 Apache Kafka？</li>
+<li>什么是 Swagger？你用 Spring Boot 实现了它吗？</li>
+<li>前后端分离，如何维护接口文档 ?</li>
+<li>如何重新加载 Spring Boot 上的更改，而无需重新启动服务器？Spring Boot项目如何热部署？</li>
+<li>您使用了哪些 starter maven 依赖项？</li>
+<li>Spring Boot 中的 starter 到底是什么 ?</li>
+<li>spring-boot-starter-parent 有什么用 ?</li>
+<li>Spring Boot 打成的 jar 和普通的 jar 有什么区别 ?</li>
+<li>运行 Spring Boot 有哪几种方式？</li>
+<li>Spring Boot 需要独立的容器运行吗？</li>
+<li>开启 Spring Boot 特性有哪几种方式？</li>
+<li>如何使用 Spring Boot 实现异常处理？</li>
+<li>如何使用 Spring Boot 实现分页和排序？</li>
+<li>微服务中如何实现 session 共享 ?</li>
+<li>Spring Boot 中如何实现定时任务 ?</li>
+</ol>
+<h1 id="spring-cloud"><a href="#spring-cloud" class="headerlink" title="spring cloud"></a>spring cloud</h1><ol>
+<li>为什么需要学习Spring Cloud</li>
+<li>什么是Spring Cloud</li>
+<li>设计目标与优缺点</li>
+<li>设计目标</li>
+<li>优缺点</li>
+<li>Spring Cloud发展前景</li>
+<li>整体架构</li>
+<li>主要项目</li>
+<li>Spring Cloud Config</li>
+<li>Spring Cloud Netflix</li>
+<li>Spring Cloud Bus</li>
+<li>Spring Cloud Consul</li>
+<li>Spring Cloud Security</li>
+<li>Spring Cloud Sleuth</li>
+<li>Spring Cloud Stream</li>
+<li>Spring Cloud Task</li>
+<li>Spring Cloud Zookeeper</li>
+<li>Spring Cloud Gateway</li>
+<li>Spring Cloud OpenFeign</li>
+<li>Spring Cloud的版本关系</li>
+<li>Spring Cloud和SpringBoot版本对应关系</li>
+<li>Spring Cloud和各子项目版本对应关系</li>
+<li>SpringBoot和SpringCloud的区别？</li>
+<li>使用 Spring Boot 开发分布式微服务时，我们面临以下问题</li>
+<li>服务注册和发现是什么意思？Spring Cloud 如何实现？</li>
+<li>Spring Cloud 和dubbo区别?</li>
+<li>负载平衡的意义什么？</li>
+<li>什么是 Hystrix？它如何实现容错？</li>
+<li>什么是 Hystrix 断路器？我们需要它吗？</li>
+<li>什么是 Netflix Feign？它的优点是什么？</li>
+<li>什么是 Spring Cloud Bus？我们需要它吗？</li>
+<li>Spring Cloud断路器的作用</li>
+<li>什么是Spring Cloud Config?</li>
+<li>什么是Spring Cloud Gateway?</li>
+</ol>
+<h1 id="MQ"><a href="#MQ" class="headerlink" title="MQ"></a>MQ</h1><ol>
+<li>为什么使用MQ？MQ的优点</li>
+<li>消息队列有什么优缺点？RabbitMQ有什么优缺点？</li>
+<li>你们公司生产环境用的是什么消息中间件？</li>
+<li>Kafka、ActiveMQ、RabbitMQ、RocketMQ 有什么优缺点？</li>
+<li>MQ 有哪些常见问题？如何解决这些问题？</li>
+<li>什么是RabbitMQ？</li>
+<li>rabbitmq 的使用场景</li>
+<li>RabbitMQ基本概念</li>
+<li>RabbitMQ的工作模式</li>
+<li>如何保证RabbitMQ消息的顺序性？</li>
+<li>消息如何分发？</li>
+<li>消息怎么路由？</li>
+<li>消息基于什么传输？</li>
+<li>如何保证消息不被重复消费？或者说，如何保证消息消费时的幂等性？</li>
+<li>如何确保消息正确地发送至 RabbitMQ？ 如何确保消息接收方消费了消息？</li>
+<li>如何保证RabbitMQ消息的可靠传输？</li>
+<li>为什么不应该对所有的 message 都使用持久化机制？</li>
+<li>如何保证高可用的？RabbitMQ 的集群</li>
+<li>如何解决消息队列的延时以及过期失效问题？消息队列满了以后该怎么处理？有几百万消息持续积压几小时，说说怎么解决？</li>
+<li>设计MQ思路</li>
+</ol>
+<h1 id="Netty-1"><a href="#Netty-1" class="headerlink" title="Netty"></a>Netty</h1><ol>
+<li>Netty 是什么？</li>
+<li>Netty 的特点是什么？</li>
+<li>Netty 的优势有哪些？</li>
+<li>Netty 的应用场景有哪些？</li>
+<li>Netty 高性能表现在哪些方面？</li>
+<li>BIO、NIO和AIO的区别？</li>
+<li>NIO的组成？</li>
+<li>Netty的线程模型？</li>
+<li>TCP 粘包/拆包的原因及解决方法？</li>
+<li>什么是 Netty 的零拷贝？</li>
+<li>Netty 中有哪种重要组件？</li>
+<li>Netty 发送消息有几种方式？</li>
+<li>默认情况 Netty 起多少线程？何时启动？</li>
+<li>了解哪几种序列化协议？</li>
+<li>如何选择序列化协议？</li>
+<li>Netty 支持哪些心跳类型设置？</li>
+<li>Netty 和 Tomcat 的区别？</li>
+<li>NIOEventLoopGroup源码？</li>
+<li>JDK原生NIO程序的问题</li>
+<li>Netty的特点</li>
+<li>Netty常见使用场景</li>
+<li>Netty高性能设计</li>
+<li>I/O模型</li>
+<li>阻塞I/O</li>
+<li>I/O复用模型</li>
+<li>基于buffer</li>
+<li>线程模型</li>
+<li>事件驱动模型</li>
+<li>Reactor线程模型</li>
+<li>Netty线程模型</li>
+<li>异步处理</li>
+<li>Netty架构设计</li>
+<li>功能特性</li>
+<li>模块组件</li>
+<li>Bootstrap、ServerBootstrap</li>
+<li>Future、ChannelFuture</li>
+<li>Channel</li>
+<li>Selector</li>
+<li>NioEventLoop</li>
+<li>NioEventLoopGroup</li>
+<li>ChannelHandler</li>
+<li>ChannelHandlerContext</li>
+<li>ChannelPipline</li>
+<li>工作原理架构</li>
+</ol>
+<!-- flag of hidden posts -->
+    </div>
+
+    
+    
+    
+        
+
+<div>
+<ul class="post-copyright">
+  <li class="post-copyright-author">
+    <strong>本文作者： </strong>nytech
+  </li>
+  <li class="post-copyright-link">
+    <strong>本文链接：</strong>
+    <a href="https://nytech3.github.io/1997/01/01/interview/%E9%9D%A2%E8%AF%95%E9%A2%98/" title="常见面试题">https://nytech3.github.io/1997/01/01/interview/面试题/</a>
+  </li>
+  <li class="post-copyright-license">
+    <strong>版权声明： </strong>本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" rel="noopener" target="_blank"><i class="fab fa-fw fa-creative-commons"></i>BY-NC-SA</a> 许可协议。转载请注明出处！
+  </li>
+</ul>
+</div>
+
+
+      <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/%E9%9D%A2%E8%AF%95/" rel="tag"># 面试</a>
+          </div>
+
+        
+
+
+        
+      </footer>
+    
+  </article>
+  
+  
+  
+
+
+
+          </div>
+          
+
+<script>
+  window.addEventListener('tabs:register', () => {
+    let { activeClass } = CONFIG.comments;
+    if (CONFIG.comments.storage) {
+      activeClass = localStorage.getItem('comments_active') || activeClass;
+    }
+    if (activeClass) {
+      let activeTab = document.querySelector(`a[href="#comment-${activeClass}"]`);
+      if (activeTab) {
+        activeTab.click();
+      }
+    }
+  });
+  if (CONFIG.comments.storage) {
+    window.addEventListener('tabs:click', event => {
+      if (!event.target.matches('.tabs-comment .tab-content .tab-pane')) return;
+      let commentClass = event.target.classList[1];
+      localStorage.setItem('comments_active', commentClass);
+    });
+  }
+</script>
+
+        </div>
+          
+  
+  <div class="toggle sidebar-toggle">
+    <span class="toggle-line toggle-line-first"></span>
+    <span class="toggle-line toggle-line-middle"></span>
+    <span class="toggle-line toggle-line-last"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="sidebar-inner">
+
+      <ul class="sidebar-nav motion-element">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <!--noindex-->
+      <div class="post-toc-wrap sidebar-panel">
+          <div class="post-toc motion-element"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#JVM"><span class="nav-number">1.</span> <span class="nav-text">JVM</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#JAVA"><span class="nav-number">2.</span> <span class="nav-text">JAVA</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#python"><span class="nav-number">3.</span> <span class="nav-text">python</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#fastapi"><span class="nav-number">4.</span> <span class="nav-text">fastapi</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#JDBC"><span class="nav-number">5.</span> <span class="nav-text">JDBC</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#IO"><span class="nav-number">6.</span> <span class="nav-text">IO</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Spring"><span class="nav-number">7.</span> <span class="nav-text">Spring</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Spring-MVC"><span class="nav-number">8.</span> <span class="nav-text">Spring MVC</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Mysql"><span class="nav-number">9.</span> <span class="nav-text">Mysql</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#MyBatis"><span class="nav-number">10.</span> <span class="nav-text">MyBatis</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Redis"><span class="nav-number">11.</span> <span class="nav-text">Redis</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Kafka"><span class="nav-number">12.</span> <span class="nav-text">Kafka</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%A1%B9%E7%9B%AE"><span class="nav-number">13.</span> <span class="nav-text">项目</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Dubbo"><span class="nav-number">14.</span> <span class="nav-text">Dubbo</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F"><span class="nav-number">15.</span> <span class="nav-text">操作系统</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%AE%A1%E7%AE%97%E6%9C%BA%E7%BD%91%E7%BB%9C"><span class="nav-number">16.</span> <span class="nav-text">计算机网络</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Zookeeper"><span class="nav-number">17.</span> <span class="nav-text">Zookeeper</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Netty"><span class="nav-number">18.</span> <span class="nav-text">Netty</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Dubbo-1"><span class="nav-number">19.</span> <span class="nav-text">Dubbo</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Tomcat"><span class="nav-number">20.</span> <span class="nav-text">Tomcat</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Maven"><span class="nav-number">21.</span> <span class="nav-text">Maven</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Nginx"><span class="nav-number">22.</span> <span class="nav-text">Nginx</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#git"><span class="nav-number">23.</span> <span class="nav-text">git</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E7%AE%97%E6%B3%95"><span class="nav-number">24.</span> <span class="nav-text">算法</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%AE%BE%E8%AE%A1%E6%A8%A1%E5%BC%8F%E4%BB%A5%E5%8F%8A%E4%BD%BF%E7%94%A8%E5%9C%BA%E6%99%AF"><span class="nav-number">25.</span> <span class="nav-text">设计模式以及使用场景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%88%86%E5%B8%83%E5%BC%8F"><span class="nav-number">26.</span> <span class="nav-text">分布式</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%B8%B8%E8%A7%81%E8%A7%A3%E5%86%B3%E6%96%B9%E6%A1%88"><span class="nav-number">27.</span> <span class="nav-text">常见解决方案</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E7%BC%93%E5%AD%98"><span class="nav-number">28.</span> <span class="nav-text">缓存</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%BC%82%E6%AD%A5"><span class="nav-number">29.</span> <span class="nav-text">异步</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%80%9A%E8%AE%AF"><span class="nav-number">30.</span> <span class="nav-text">通讯</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%A6%82%E5%BF%B5"><span class="nav-number">31.</span> <span class="nav-text">概念</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E4%BB%A3%E7%A0%81%E9%A3%8E%E6%A0%BC"><span class="nav-number">32.</span> <span class="nav-text">代码风格</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E5%BE%AE%E6%9C%8D%E5%8A%A1"><span class="nav-number">33.</span> <span class="nav-text">微服务</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5"><span class="nav-number">34.</span> <span class="nav-text">问题排查</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#CDN"><span class="nav-number">35.</span> <span class="nav-text">CDN</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#NoSQL"><span class="nav-number">36.</span> <span class="nav-text">NoSQL</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#ZooKeeper"><span class="nav-number">37.</span> <span class="nav-text">ZooKeeper</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#HTTP"><span class="nav-number">38.</span> <span class="nav-text">HTTP</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E7%AE%97%E6%B3%95-1"><span class="nav-number">39.</span> <span class="nav-text">算法</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Linux"><span class="nav-number">40.</span> <span class="nav-text">Linux</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Spring-boot"><span class="nav-number">41.</span> <span class="nav-text">Spring boot</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#spring-cloud"><span class="nav-number">42.</span> <span class="nav-text">spring cloud</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#MQ"><span class="nav-number">43.</span> <span class="nav-text">MQ</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#Netty-1"><span class="nav-number">44.</span> <span class="nav-text">Netty</span></a></li></ol></div>
+      </div>
+      <!--/noindex-->
+
+      <div class="site-overview-wrap sidebar-panel">
+        <div class="site-author motion-element" itemprop="author" itemscope itemtype="http://schema.org/Person">
+    <img class="site-author-image" itemprop="image" alt="nytech"
+      src="/images/author.jpg">
+  <p class="site-author-name" itemprop="name">nytech</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap motion-element">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+          <a href="/archives/">
+        
+          <span class="site-state-item-count">140</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+            <a href="/categories/">
+          
+        <span class="site-state-item-count">3</span>
+        <span class="site-state-item-name">分类</span></a>
+      </div>
+      <div class="site-state-item site-state-tags">
+            <a href="/tags/">
+          
+        <span class="site-state-item-count">24</span>
+        <span class="site-state-item-name">标签</span></a>
+      </div>
+  </nav>
+</div>
+  <div class="links-of-author motion-element">
+      <span class="links-of-author-item">
+        <a href="https://github.com/nytech3" title="GitHub → https:&#x2F;&#x2F;github.com&#x2F;nytech3" rel="noopener" target="_blank"><i class="fab fa-github fa-fw"></i>GitHub</a>
+      </span>
+  </div>
+  <div class="cc-license motion-element" itemprop="license">
+    <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" class="cc-opacity" rel="noopener" target="_blank"><img src="/images/cc-by-nc-sa.svg" alt="Creative Commons"></a>
+  </div>
+
+
+
+      </div>
+
+    </div>
+  </aside>
+  <div id="sidebar-dimmer"></div>
+
+
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="footer-inner">
+        
+
+        
+
+<div class="copyright">
+  
+  &copy; 
+  <span itemprop="copyrightYear">2024</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">nytech</span>
+</div>
+
+        
+
+
+
+
+
+
+<script>
+  (function() {
+    function leancloudSelector(url) {
+      url = encodeURI(url);
+      return document.getElementById(url).querySelector('.leancloud-visitors-count');
+    }
+
+    function addCount(Counter) {
+      var visitors = document.querySelector('.leancloud_visitors');
+      var url = decodeURI(visitors.id);
+      var title = visitors.dataset.flagTitle;
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          if (results.length > 0) {
+            var counter = results[0];
+            leancloudSelector(url).innerText = counter.time + 1;
+            Counter('put', '/classes/Counter/' + counter.objectId, { time: { '__op': 'Increment', 'amount': 1 } })
+              .catch(error => {
+                console.error('Failed to save visitor count', error);
+              });
+          } else {
+              Counter('post', '/classes/Counter', { title, url, time: 1 })
+                .then(response => response.json())
+                .then(() => {
+                  leancloudSelector(url).innerText = 1;
+                })
+                .catch(error => {
+                  console.error('Failed to create', error);
+                });
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    function showTime(Counter) {
+      var visitors = document.querySelectorAll('.leancloud_visitors');
+      var entries = [...visitors].map(element => {
+        return decodeURI(element.id);
+      });
+
+      Counter('get', '/classes/Counter?where=' + encodeURIComponent(JSON.stringify({ url: { '$in': entries } })))
+        .then(response => response.json())
+        .then(({ results }) => {
+          for (let url of entries) {
+            let target = results.find(item => item.url === url);
+            leancloudSelector(url).innerText = target ? target.time : 0;
+          }
+        })
+        .catch(error => {
+          console.error('LeanCloud Counter Error', error);
+        });
+    }
+
+    let { app_id, app_key, server_url } = {"enable":true,"app_id":"J6lBEIRqy1W5i6vcNgfWkL1P-gzGzoHsz","app_key":"tlzt00UvOikqxddgeJ59o1id","security":false};
+    function fetchData(api_server) {
+      var Counter = (method, url, data) => {
+        return fetch(`${api_server}/1.1${url}`, {
+          method,
+          headers: {
+            'X-LC-Id'     : app_id,
+            'X-LC-Key'    : app_key,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+      };
+      if (CONFIG.page.isPost) {
+        if (CONFIG.hostname !== location.hostname) return;
+        addCount(Counter);
+      } else if (document.querySelectorAll('.post-title-link').length >= 1) {
+        showTime(Counter);
+      }
+    }
+
+    let api_server = app_id.slice(-9) !== '-MdYXbMMI' ? server_url : `https://${app_id.slice(0, 8).toLowerCase()}.api.lncldglobal.com`;
+
+    if (api_server) {
+      fetchData(api_server);
+    } else {
+      fetch('https://app-router.leancloud.cn/2/route?appId=' + app_id)
+        .then(response => response.json())
+        .then(({ api_server }) => {
+          fetchData('https://' + api_server);
+        });
+    }
+  })();
+</script>
+
+
+      </div>
+    </footer>
+  </div>
+
+  
+  
+  <script color='0,0,0' opacity='0.5' zIndex='-1' count='150' src="/lib/canvas-nest/canvas-nest.min.js"></script>
+  <script src="/lib/anime.min.js"></script>
+  <script src="/lib/velocity/velocity.min.js"></script>
+  <script src="/lib/velocity/velocity.ui.min.js"></script>
+
+<script src="/js/utils.js"></script>
+
+<script src="/js/motion.js"></script>
+
+
+<script src="/js/schemes/pisces.js"></script>
+
+
+<script src="/js/next-boot.js"></script>
+
+
+
+
+  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+
+  
+
+</body>
+</html>
